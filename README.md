@@ -8,7 +8,7 @@ Usage:
 Arguments:
 
 	--template=<archiso template name>
-	  Tells offline to use this base configuration for the ISO.
+	  Defines which archiso template to adapt into a offline version.
 	  The default is: releng
 
 	--mirrors=<region>
