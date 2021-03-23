@@ -8,15 +8,17 @@ import os
 
 if archinstall.arguments.get('help', None):
 	print(f"""
-This is a helper script to setup Arch Linux ISO in a offline-mode.
-It requires root privileges as a requirement from archiso.
+This is a helper script to create Arch Linux ISO's that support
+Offline installations. It requires root privileges due to archiso itself.
 
 Usage:
+
 	sudo python offline.py
 
 Arguments:
+
 	--template=<archiso template name>
-	  Tells offline to use this base configuration for the ISO.
+	  Defines which archiso template to adapt into a offline version.
 	  The default is: releng
 
 	--mirrors=<region>
@@ -43,6 +45,7 @@ Arguments:
 	  The default is: ./archiso_offline/
 
 Examples:
+
 	sudo python offline.py --mirrors=Sweden --packages="nano wget" --rebuild
 """)
 	exit(0)
