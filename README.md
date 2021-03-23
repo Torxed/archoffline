@@ -1,5 +1,5 @@
-This is a helper script to setup Arch Linux ISO in a offline-mode.
-It requires root privileges as a requirement from archiso.
+This is a helper script to create Arch Linux ISO's that support
+Offline installations. It requires root privileges due to archiso itself.
 
 Usage:
 
