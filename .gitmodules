@@ -1,0 +1,4 @@
+[submodule "archinstall"]
+	path = archinstall
+	url = https://github.com/Torxed/archinstall.git
+	branch = master
