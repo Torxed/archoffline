@@ -12,7 +12,7 @@ This is a helper script to setup Arch Linux ISO in a offline-mode.
 It requires root privileges as a requirement from archiso.
 
 Usage:
-	python offline.py
+	sudo python offline.py
 
 Arguments:
 	--template=<archiso template name>
@@ -83,6 +83,9 @@ def setup_builddir(main, pacdb, cachedir):
 def get_mirrors():
 	if not (mirror_region_data := archinstall.arguments.get('mirrors', None)):
 		mirror_region_data = archinstall.select_mirror_regions(archinstall.list_mirrors())
+		if not mirror_region_data:
+			raise archinstall.RequirementError("A mirror region is required. Future versions will source /etc/pacman.d/mirrors.")
+
 		mirrors = list(list(mirror_region_data.values())[0].keys())
 	else:
 		mirror_region_data = archinstall.list_mirrors()[mirror_region_data]
@@ -116,8 +119,9 @@ with open(pacman_build_config, 'w') as pac_conf:
 	pac_conf.write(f"{mirror_str_list}\n")
 
 if not (packages := archinstall.arguments.get('packages', None)):
-	packages = input('Enter any additional packages to include (space separated): ').strip() or None
-packages = packages.split(' ')
+	packages = input('Enter any additional packages to include aside from packages.x86_64 (space separated): ').strip() or []
+if packages:
+	packages = packages.split(' ')
 try:
 	archinstall.validate_package_list(packages)
 except archinstall.RequirementError as e:
