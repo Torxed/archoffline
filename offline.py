@@ -44,6 +44,21 @@ Arguments:
 	  You can override the build directory for the ISO.
 	  The default is: ./archiso_offline/
 
+	--verbose
+	  Enables printout for all the syscalls that are being made.
+	  (For instance output from mkarchiso)
+
+	--boot
+	  Boots the built ISO, either after --rebuild or old build.
+
+	--archinstall
+	  Clones in archinstall master branch and adds it to autostart.
+	  (This is optional, archinstall stable is shipped as a package already)
+
+	--profiles=[a commaseparated list of profile paths]
+	  If a profile is given, it is copied into archinstall master directory.
+	  This option implies --archinstall is given.
+
 Examples:
 
 	sudo python offline.py --mirrors=Sweden --packages="nano wget" --rebuild
@@ -162,6 +177,32 @@ with open(f'{BUILD_DIR}/pacman.conf', 'w') as pac_conf:
 	pac_conf.write(f"SigLevel = Optional TrustAll\n")
 	pac_conf.write(f"Server = file:///root/{REPO_NAME}/\n")
 
+shutil.copy2(f'{BUILD_DIR}/pacman.conf', f'{BUILD_DIR}/airootfs/etc/pacman.conf')
+
+if (profiles := archinstall.arguments.get('profiles', '').split(',')):
+	if not archinstall.arguments.get('archinstall', None):
+		archinstall.arguments['archinstall'] = True
+
+if archinstall.arguments.get('archinstall', None):
+	archinstall.log(f"Cloning in archinstall to ISO root.")
+	if (git := archinstall.sys_command(f"/bin/bash -c \"git clone https://github.com/archlinux/archinstall.git archinstall-git\"", workdir=f'{BUILD_DIR}/airootfs/root/')).exit_code != 0:
+		print(git.exit_code)
+		print(b''.join(git))
+		exit(1)
+
+	with open(f'{BUILD_DIR}/airootfs/root/.zprofile', 'w') as zprofile:
+		zprofile.write('[[ -z $DISPLAY && $XDG_VTNR -eq 1 ]] && sh -c "cd /root/archinstall-git; cp examples/guided.py ./; python guided.py"')
+
+if len(profiles):
+	archinstall.log(f"Adding in additional archinstall profiles:", profiles)
+	for profile in profiles:
+		if pathlib.Path(profile).exists() is False:
+			archinstall.log(f"Adding in additional archinstall profiles: {profiles}", fg="red", level=archinstall.LOG_LEVELS.Error)
+			continue
+
+		archinstall.log(f"Copying profile '{profile}' over to the ISO's archinstall library.")
+		shutil.copy2(profile, f'{BUILD_DIR}/airootfs/root/archinstall-git/profiles/')
+
 if archinstall.arguments.get('breakpoint', None):
 	input('Breakpoint: mkarchiso')
 
@@ -173,3 +214,24 @@ if (iso := archinstall.sys_command(f"/bin/bash -c \"mkarchiso -C {pacman_build_c
 
 iso_out = str(BUILD_DIR/"out")+"/*.iso"
 print(f"ISO has been created at: {glob.glob(iso_out)}")
+
+if archinstall.arguments.get('boot', None):
+	ISO = glob.glob(iso_out)[0]
+	if pathlib.Path(f"{BUILD_DIR}/test.qcow2").exists() is False:
+		archinstall.sys_command(f"qemu-img create -f qcow2 {BUILD_DIR}/test.qcow2 15G")
+
+	archinstall.sys_command(f"sudo qemu-system-x86_64 "
+								+ "-cpu host "
+								+ "-enable-kvm "
+								+ "-machine q35,accel=kvm "
+								+ "-device intel-iommu "
+								+ "-m 2048 "
+								+ "-nic none"
+								+ "-drive if=pflash,format=raw,readonly,file=/usr/share/ovmf/x64/OVMF_CODE.fd  "
+								+ "-drive if=pflash,format=raw,readonly,file=/usr/share/ovmf/x64/OVMF_VARS.fd "
+								+ "-device virtio-scsi-pci,bus=pcie.0,id=scsi0 "
+								+ "    -device scsi-hd,drive=hdd0,bus=scsi0.0,id=scsi0.0,bootindex=2 "
+								+ f"        -drive file={BUILD_DIR}/test.qcow2,if=none,format=qcow2,discard=unmap,aio=native,cache=none,id=hdd0 "
+								+ "-device virtio-scsi-pci,bus=pcie.0,id=scsi1 "
+								+ "    -device scsi-cd,drive=cdrom0,bus=scsi1.0,bootindex=1 "
+								+ f"        -drive file={ISO},media=cdrom,if=none,format=raw,cache=none,id=cdrom0")
