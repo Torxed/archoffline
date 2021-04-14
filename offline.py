@@ -55,6 +55,9 @@ Arguments:
 	  Clones in archinstall master branch and adds it to autostart.
 	  (This is optional, archinstall stable is shipped as a package already)
 
+	--ai-branch=<archinstall branch to clone>
+	  This can override the default `master` branch.
+
 	--profiles=[a commaseparated list of profile paths]
 	  If a profile is given, it is copied into archinstall master directory.
 	  This option implies --archinstall is given.
@@ -75,6 +78,7 @@ pacman_package_cache_dir = pathlib.Path(f'{BUILD_DIR}/airootfs/root/{REPO_NAME}/
 pacman_build_config = f'{BUILD_DIR}/pacman.build.conf'
 
 def copy_archiso_config_directory(dst, conf):
+	archinstall.log(f"Copying the Arch ISO configuration {conf} to new build door {dst}.", level=archinstall.LOG_LEVELS.Info)
 	for obj in glob.glob(f'/usr/share/archiso/configs/{conf}/*'):
 		if os.path.isdir(obj):
 			shutil.copytree(obj, f"{dst}/{obj.split('/')[-1]}", symlinks=True)
@@ -89,14 +93,23 @@ def get_default_packages(builddir):
 			yield line.strip()
 
 def setup_builddir(main, pacdb, cachedir):
+	archinstall.log(f"Setting up a new build directory in {main}", level=archinstall.LOG_LEVELS.Info)
 	if main.exists():
 		shutil.rmtree(f"{main}")
 
 	main.mkdir(parents=True, exist_ok=True)
 	copy_archiso_config_directory(main, archinstall.arguments.get('template', 'releng'))
 
+	modify_archiso_config_directory(main)
+
 	pacdb.mkdir(parents=True, exist_ok=True)
-	cachedir.mkdir(parents=True, exist_ok=True)
+	if not archinstall.arguments.get('save-cache', None):
+		# This will be taken care of by --save-cache otherwise.
+		cachedir.mkdir(parents=True, exist_ok=True)
+
+def modify_archiso_config_directory(main):
+	archinstall.log(f"Removed reflector service from ISO", level=archinstall.LOG_LEVELS.Info, fg="yellow")
+	(main/"airootfs"/"etc"/"systemd"/"system"/"reflector.service.d"/"archiso.conf").unlink()
 
 def get_mirrors():
 	if not (mirror_region_data := archinstall.arguments.get('mirrors', None)):
@@ -110,11 +123,26 @@ def get_mirrors():
 		mirrors = list(mirror_region_data.keys())
 	return mirrors
 
+		
 if archinstall.arguments.get('rebuild', None) or BUILD_DIR.exists() is False:
+	save_cache = False
+	cache_folder_name = pathlib.Path(pacman_package_cache_dir).name
+	if archinstall.arguments.get('save-cache', False):
+		if pathlib.Path(pacman_package_cache_dir).exists():
+			archinstall.log(f"Moved {cache_folder_name} temporarily to {pathlib.Path('./').absolute()}", level=archinstall.LOG_LEVELS.Info)
+			shutil.move(pacman_package_cache_dir, './')
+			save_cache = True
+
 	setup_builddir(BUILD_DIR, pacman_temporary_database, pacman_package_cache_dir)
 
+	if save_cache:
+		archinstall.log(f"Moved back cache directory: '{cache_folder_name}' to '{pacman_package_cache_dir.parent}'", level=archinstall.LOG_LEVELS.Info)
+		shutil.move('./'+cache_folder_name, str(pacman_package_cache_dir.parent))
+
+archinstall.log(f"Getting mirror list from the given region.", level=archinstall.LOG_LEVELS.Info)
 mirrors = get_mirrors()
 
+archinstall.log(f"Patching pacman build configuration file.", level=archinstall.LOG_LEVELS.Info)
 with open(pacman_build_config, 'w') as pac_conf:
 	mirror_str_list = '\n'.join(f"Server = {mirror}" for mirror in mirrors)
 
@@ -140,6 +168,8 @@ if not (packages := archinstall.arguments.get('packages', None)):
 	packages = input('Enter any additional packages to include aside from packages.x86_64 (space separated): ').strip() or []
 if packages:
 	packages = packages.split(' ')
+
+archinstall.log(f"Validating additional packages...", level=archinstall.LOG_LEVELS.Info)
 try:
 	archinstall.validate_package_list(packages)
 except archinstall.RequirementError as e:
@@ -148,7 +178,10 @@ except archinstall.RequirementError as e:
 
 packages = packages + list(get_default_packages(BUILD_DIR))
 
-archinstall.log(f"Syncronizing {len(packages)} packages (this might take a while)")
+if archinstall.arguments.get('verbose', None):
+	archinstall.log(f"Syncronizing packages: {packages}")
+else:
+	archinstall.log(f"Syncronizing {len(packages)} packages (this might take a while)")
 if (pacman := archinstall.sys_command(f"pacman --noconfirm --config {pacman_build_config} -Syw {' '.join(packages)}")).exit_code != 0:
 	print(pacman.exit_code)
 	print(b''.join(pacman))
@@ -185,7 +218,7 @@ if (profiles := archinstall.arguments.get('profiles', '').split(',')):
 
 if archinstall.arguments.get('archinstall', None):
 	archinstall.log(f"Cloning in archinstall to ISO root.")
-	if (git := archinstall.sys_command(f"/bin/bash -c \"git clone https://github.com/archlinux/archinstall.git archinstall-git\"", workdir=f'{BUILD_DIR}/airootfs/root/')).exit_code != 0:
+	if (git := archinstall.sys_command(f"/bin/bash -c \"git clone -b {archinstall.arguments.get('ai-branch', 'master')} https://github.com/archlinux/archinstall.git archinstall-git\"", workdir=f'{BUILD_DIR}/airootfs/root/')).exit_code != 0:
 		print(git.exit_code)
 		print(b''.join(git))
 		exit(1)
@@ -226,7 +259,7 @@ if archinstall.arguments.get('boot', None):
 								+ "-machine q35,accel=kvm "
 								+ "-device intel-iommu "
 								+ "-m 2048 "
-								+ "-nic none"
+								+ "-nic none "
 								+ "-drive if=pflash,format=raw,readonly,file=/usr/share/ovmf/x64/OVMF_CODE.fd  "
 								+ "-drive if=pflash,format=raw,readonly,file=/usr/share/ovmf/x64/OVMF_VARS.fd "
 								+ "-device virtio-scsi-pci,bus=pcie.0,id=scsi0 "
@@ -235,3 +268,5 @@ if archinstall.arguments.get('boot', None):
 								+ "-device virtio-scsi-pci,bus=pcie.0,id=scsi1 "
 								+ "    -device scsi-cd,drive=cdrom0,bus=scsi1.0,bootindex=1 "
 								+ f"        -drive file={ISO},media=cdrom,if=none,format=raw,cache=none,id=cdrom0")
+
+# sudo qemu-system-x86_64         -cpu host         -enable-kvm         -machine q35,accel=kvm         -device intel-iommu         -m 8192         -drive if=pflash,format=raw,readonly,file=/usr/share/ovmf/x64/OVMF_CODE.fd          -drive if=pflash,format=raw,readonly,file=/usr/share/ovmf/x64/OVMF_VARS.fd         -device virtio-scsi-pci,bus=pcie.0,id=scsi0             -device scsi-hd,drive=hdd0,bus=scsi0.0,id=scsi0.0,bootindex=1                 -drive file=./archiso_offline/test.qcow2,if=none,format=qcow2,discard=unmap,aio=native,cache=none,id=hdd0         -device virtio-scsi-pci,bus=pcie.0,id=scsi1             -device scsi-cd,drive=cdrom0,bus=scsi1.0,bootindex=2                 -drive file=archiso_offline/out/archlinux-2021.04.12-x86_64.iso,media=cdrom,if=none,format=raw,cache=none,id=cdrom0 -nic none
