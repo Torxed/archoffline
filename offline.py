@@ -108,8 +108,10 @@ def setup_builddir(main, pacdb, cachedir):
 		cachedir.mkdir(parents=True, exist_ok=True)
 
 def modify_archiso_config_directory(main):
-	archinstall.log(f"Removed reflector service from ISO", level=archinstall.LOG_LEVELS.Info, fg="yellow")
-	(main/"airootfs"/"etc"/"systemd"/"system"/"reflector.service.d"/"archiso.conf").unlink()
+	reflector_config = main/"airootfs"/"etc"/"systemd"/"system"/"reflector.service.d"/"archiso.conf"
+	if reflector_config.exists():
+		archinstall.log(f"Removed reflector service from ISO", level=archinstall.LOG_LEVELS.Info, fg="yellow")
+		reflector_config.unlink()
 
 def get_mirrors():
 	if not (mirror_region_data := archinstall.arguments.get('mirrors', None)):
