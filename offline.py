@@ -214,7 +214,8 @@ with open(f'{BUILD_DIR}/pacman.conf', 'w') as pac_conf:
 
 shutil.copy2(f'{BUILD_DIR}/pacman.conf', f'{BUILD_DIR}/airootfs/etc/pacman.conf')
 
-if (profiles := archinstall.arguments.get('profiles', '').split(',')):
+if (profiles := archinstall.arguments.get('profiles', None)):
+	profiles = [x for x in profiles.split(',') if len(x)]
 	if not archinstall.arguments.get('archinstall', None):
 		archinstall.arguments['archinstall'] = True
 
@@ -228,7 +229,7 @@ if archinstall.arguments.get('archinstall', None):
 	with open(f'{BUILD_DIR}/airootfs/root/.zprofile', 'w') as zprofile:
 		zprofile.write('[[ -z $DISPLAY && $XDG_VTNR -eq 1 ]] && sh -c "cd /root/archinstall-git; cp examples/guided.py ./; python guided.py"')
 
-if len(profiles):
+if profiles:
 	archinstall.log(f"Adding in additional archinstall profiles:", profiles)
 	for profile in profiles:
 		if pathlib.Path(profile).exists() is False:
