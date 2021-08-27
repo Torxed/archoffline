@@ -459,7 +459,7 @@ if archinstall.arguments.get('customize', None):
 		#		archinstall.log(customize_iso.exit_code)
 		#		exit(1)
 	else:
-		print(f"Customization-script {script_path} does not exist, skipping.", level=logging.ERROR, fg="red")
+		archinstall.log(f"Customization-script {script_path} does not exist, skipping.", level=logging.ERROR, fg="red")
 
 archinstall.log(f"Creating ISO (this will take time)")
 #print(f"/bin/bash -c \"mkarchiso -C {pacman_build_config} -v -w {BUILD_DIR}/work/ -o {BUILD_DIR}/out/ {BUILD_DIR}\"")
