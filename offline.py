@@ -62,7 +62,7 @@ Arguments:
 	  Boots the built ISO, either after --rebuild or old build.
 
 	--archinstall
-	  Clones in archinstall master branch and adds it to autostart.
+	  Clones in archinstall with the branch given on --ai-branch in /root/archinstall-git.
 	  (This is optional, archinstall stable is shipped as a package already)
 
 	--ai-branch=<archinstall branch to clone>
