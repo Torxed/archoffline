@@ -94,6 +94,11 @@ Arguments:
 	  Add a script that will be run from within Archiso and executed before
 	  the ISO is finalized.
 
+	--autorun-archinstall
+	  This will auto-launch archinstall when the ISO boots.
+	  This requires --archinstall to be given as well and is not impllied.
+	  autorun will also re-install archinstall to the latest version against --ai-branch
+
 Examples:
 
 	sudo python offline.py --mirrors=Sweden --packages="nano wget" --rebuild
@@ -311,6 +316,8 @@ if archinstall.arguments.get('resources', None):
 				shutil.copy2(f"{resource}", f"{BUILD_DIR}/airootfs/root/resources/")
 
 packages = packages + list(get_default_packages(BUILD_DIR))
+if archinstall.arguments.get('archinstall', None):
+	packages += ['python-pip', 'git']
 
 if archinstall.arguments.get('verbose', None):
 	archinstall.log(f"Syncronizing packages using: pacman --noconfirm --config {pacman_build_config} -Syw {' '.join(packages)}")
@@ -433,8 +440,9 @@ if archinstall.arguments.get('archinstall', None):
 		archinstall.log(git.exit_code)
 		exit(1)
 
-	with open(f'{BUILD_DIR}/airootfs/root/.zprofile', 'w') as zprofile:
-		zprofile.write('[[ -z $DISPLAY && $XDG_VTNR -eq 1 ]] && sh -c "cd /root/archinstall-git; cp examples/guided.py ./; python guided.py"')
+	if archinstall.arguments.get('autorun-archinstall', False):
+		with open(f'{BUILD_DIR}/airootfs/root/.zprofile', 'w') as zprofile:
+			zprofile.write('[[ -z $DISPLAY && $XDG_VTNR -eq 1 ]] && sh -c "cd /root/archinstall-git; pip uninstall archinstall -y; python setup.py install; cp examples/guided.py ./; python guided.py"')
 
 if profiles:
 	archinstall.log(f"Adding in additional archinstall profiles:", profiles)
