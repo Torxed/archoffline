@@ -151,7 +151,7 @@ def modify_archiso_config_directory(main):
 		archinstall.log(f"Removed reflector service from ISO", level=logging.INFO, fg="yellow")
 		reflector_config.unlink()
 
-def get_mirrors():
+def get_mirrors_from_archinstall():
 	if not (mirror_region_data := archinstall.arguments.get('mirrors', None)):
 		mirror_region_data = archinstall.select_mirror_regions(archinstall.list_mirrors())
 		if not mirror_region_data:
@@ -176,6 +176,67 @@ def download_file(url, destination, filename=""):
 def untar_file(file):
 	print(f"/usr/bin/sudo -H -u {archinstall.arguments.get('aur-user', 'aoffline_usr')} /usr/bin/tar --directory /home/{archinstall.arguments.get('aur-user', 'aoffline_usr')}/ -xvzf {file}")
 	archinstall.SysCommand(f"/usr/bin/sudo -H -u {archinstall.arguments.get('aur-user', 'aoffline_usr')} /usr/bin/tar --directory /home/{archinstall.arguments.get('aur-user', 'aoffline_usr')}/ -xvzf {file}")
+
+def create_pacman_conf_for_build_stage(mirror_region):
+	if mirror_region.startswith(('file://', '/')) or mirror_region.startswith('http') or mirror_region != 'copy':
+		with open(pacman_build_config, 'w') as pac_conf:
+			# Some general pacman options to setup before we decide the specific source for the packages
+			pac_conf.write(f"[options]\n")
+			pac_conf.write(f"DBPath      = {pacman_temporary_database}\n")
+			pac_conf.write(f"CacheDir    = {pacman_package_cache_dir}\n")
+			pac_conf.write(f"HoldPkg     = pacman glibc\n")
+			pac_conf.write(f"Architecture = auto\n")
+			pac_conf.write(f"\n")
+			pac_conf.write(f"CheckSpace\n")
+			pac_conf.write(f"\n")
+			pac_conf.write(f"SigLevel    = Required DatabaseOptional\n")
+			pac_conf.write(f"LocalFileSigLevel = Optional\n")
+			pac_conf.write(f"\n")
+
+			# Local mirror options
+			if mirror_region.startswith(('file://', '/')):
+				pac_conf.write(f"[localrepo]\n")
+				pac_conf.write(f"SigLevel = Optional TrustAll\n")
+				pac_conf.write(f"Server = file://{mirror_region.replace('file://', '')}\n")
+				pac_conf.write(f"\n")
+				pac_conf.write(f"[core]\n")
+				pac_conf.write(f"Include = /etc/pacman.d/mirrorlist\n")
+				pac_conf.write(f"\n")
+				pac_conf.write(f"[extra]\n")
+				pac_conf.write(f"Include = /etc/pacman.d/mirrorlist\n")
+				pac_conf.write(f"\n")
+				pac_conf.write(f"[community]\n")
+				pac_conf.write(f"Include = /etc/pacman.d/mirrorlist\n")
+
+			# Specific mirror
+			elif mirror_region.startswith('http'):
+				pac_conf.write(f"\n")
+				pac_conf.write(f"[core]\n")
+				pac_conf.write(f"Server = {mirror_region}\n")
+				pac_conf.write(f"\n")
+				pac_conf.write(f"[extra]\n")
+				pac_conf.write(f"Server = {mirror_region}\n")
+				pac_conf.write(f"\n")
+				pac_conf.write(f"[community]\n")
+				pac_conf.write(f"Server = {mirror_region}\n")
+
+			# General public mirrors based on region
+			else:
+				archinstall.log(f"Retrieving and using active mirrors from region {mirror_region} for ISO build.", level=logging.INFO)
+				mirror_str_list = '\n'.join(f"Server = {mirror}" for mirror in get_mirrors_from_archinstall())
+
+				pac_conf.write(f"\n")
+				pac_conf.write(f"[core]\n")
+				pac_conf.write(f"{mirror_str_list}\n")
+				pac_conf.write(f"[extra]\n")
+				pac_conf.write(f"{mirror_str_list}\n")
+				pac_conf.write(f"[community]\n")
+				pac_conf.write(f"{mirror_str_list}\n")
+
+	elif mirror_region == 'copy':
+		shutil.copy2('/etc/pacman.conf', pacman_build_config)
+	else:
+		raise ValueError(f"Unknown mirror selection: {mirror_region}")
 		
 if archinstall.arguments.get('rebuild', None) or BUILD_DIR.exists() is False:
 	save_cache = False
@@ -192,73 +253,7 @@ if archinstall.arguments.get('rebuild', None) or BUILD_DIR.exists() is False:
 		archinstall.log(f"Moved back cache directory: '{cache_folder_name}' to '{pacman_package_cache_dir.parent}'", level=logging.INFO)
 		shutil.move('./'+cache_folder_name, str(pacman_package_cache_dir.parent))
 
-if (mirror_region := archinstall.arguments.get('mirrors', '')).startswith(('file://', '/')) or mirror_region.startswith('http'):
-	with open(pacman_build_config, 'w') as pac_conf:
-		pac_conf.write(f"[options]\n")
-		pac_conf.write(f"DBPath      = {pacman_temporary_database}\n")
-		pac_conf.write(f"CacheDir    = {pacman_package_cache_dir}\n")
-		pac_conf.write(f"HoldPkg     = pacman glibc\n")
-		pac_conf.write(f"Architecture = auto\n")
-		pac_conf.write(f"\n")
-		pac_conf.write(f"CheckSpace\n")
-		pac_conf.write(f"\n")
-		pac_conf.write(f"SigLevel    = Required DatabaseOptional\n")
-		pac_conf.write(f"LocalFileSigLevel = Optional\n")
-		pac_conf.write(f"\n")
-
-		if mirror_region.startswith(('file://', '/')):
-			pac_conf.write(f"[localrepo]\n")
-			pac_conf.write(f"SigLevel = Optional TrustAll\n")
-			pac_conf.write(f"Server = file://{mirror_region.replace('file://', '')}\n")
-			pac_conf.write(f"\n")
-			pac_conf.write(f"[core]\n")
-			pac_conf.write(f"Include = /etc/pacman.d/mirrorlist\n")
-			pac_conf.write(f"\n")
-			pac_conf.write(f"[extra]\n")
-			pac_conf.write(f"Include = /etc/pacman.d/mirrorlist\n")
-			pac_conf.write(f"\n")
-			pac_conf.write(f"[community]\n")
-			pac_conf.write(f"Include = /etc/pacman.d/mirrorlist\n")
-		else:
-			pac_conf.write(f"\n")
-			pac_conf.write(f"[core]\n")
-			pac_conf.write(f"Server = {mirror_region}\n")
-			pac_conf.write(f"\n")
-			pac_conf.write(f"[extra]\n")
-			pac_conf.write(f"Server = {mirror_region}\n")
-			pac_conf.write(f"\n")
-			pac_conf.write(f"[community]\n")
-			pac_conf.write(f"Server = {mirror_region}\n")
-
-
-elif mirror_region == 'copy':
-	raise RuntimeError("Copying pacman.conf is not yet supported, need to patch pacman.conf to include CacheDir and DBPath.")
-	shutil.copy2('/etc/pacman.conf', pacman_build_config)
-else:
-	archinstall.log(f"Getting mirror list from the given region.", level=logging.INFO)
-	mirrors = get_mirrors()
-
-	archinstall.log(f"Patching pacman build configuration file.", level=logging.INFO)
-	with open(pacman_build_config, 'w') as pac_conf:
-		mirror_str_list = '\n'.join(f"Server = {mirror}" for mirror in mirrors)
-
-		pac_conf.write(f"[options]\n")
-		pac_conf.write(f"DBPath      = {pacman_temporary_database}\n")
-		pac_conf.write(f"CacheDir    = {pacman_package_cache_dir}\n")
-		pac_conf.write(f"HoldPkg     = pacman glibc\n")
-		pac_conf.write(f"Architecture = auto\n")
-		pac_conf.write(f"\n")
-		pac_conf.write(f"CheckSpace\n")
-		pac_conf.write(f"\n")
-		pac_conf.write(f"SigLevel    = Required DatabaseOptional\n")
-		pac_conf.write(f"LocalFileSigLevel = Optional\n")
-		pac_conf.write(f"\n")
-		pac_conf.write(f"[core]\n")
-		pac_conf.write(f"{mirror_str_list}\n")
-		pac_conf.write(f"[extra]\n")
-		pac_conf.write(f"{mirror_str_list}\n")
-		pac_conf.write(f"[community]\n")
-		pac_conf.write(f"{mirror_str_list}\n")
+create_pacman_conf_for_build_stage(archinstall.arguments.get('mirrors', ''))
 
 if not (packages := archinstall.arguments.get('packages', None)):
 	packages = input('Enter any additional packages to include aside from packages.x86_64 (space separated): ').strip() or []
