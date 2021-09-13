@@ -28,7 +28,11 @@ Arguments:
 	  The default is: releng
 
 	--mirrors=<region>
-	  Uses the current HTTPS enabled mirrors from this region.
+	  Uses the current HTTP/HTTPS enabled mirrors from this region.
+	  Optional magical keywords instead of a region are:
+	   * copy - copies the /etc/pacman.conf setup to the build env
+	   * https://... - Will hard-code a specific repo server
+	   * file:// - Will use a locally stored mirror as the build env repo
 
 	--packages="<list of packages>"
 	  A space separated list of packages to ship with the iso
@@ -188,7 +192,7 @@ if archinstall.arguments.get('rebuild', None) or BUILD_DIR.exists() is False:
 		archinstall.log(f"Moved back cache directory: '{cache_folder_name}' to '{pacman_package_cache_dir.parent}'", level=logging.INFO)
 		shutil.move('./'+cache_folder_name, str(pacman_package_cache_dir.parent))
 
-if (mirror_region := archinstall.arguments.get('mirrors', '')).startswith(('file://', '/')):
+if (mirror_region := archinstall.arguments.get('mirrors', '')).startswith(('file://', '/')) or mirror_region.startswith('http'):
 	with open(pacman_build_config, 'w') as pac_conf:
 		pac_conf.write(f"[options]\n")
 		pac_conf.write(f"DBPath      = {pacman_temporary_database}\n")
@@ -201,18 +205,31 @@ if (mirror_region := archinstall.arguments.get('mirrors', '')).startswith(('file
 		pac_conf.write(f"SigLevel    = Required DatabaseOptional\n")
 		pac_conf.write(f"LocalFileSigLevel = Optional\n")
 		pac_conf.write(f"\n")
-		pac_conf.write(f"[localrepo]\n")
-		pac_conf.write(f"SigLevel = Optional TrustAll\n")
-		pac_conf.write(f"Server = file://{mirror_region.replace('file://', '')}\n")
-		pac_conf.write(f"\n")
-		pac_conf.write(f"[core]\n")
-		pac_conf.write(f"Include = /etc/pacman.d/mirrorlist\n")
-		pac_conf.write(f"\n")
-		pac_conf.write(f"[extra]\n")
-		pac_conf.write(f"Include = /etc/pacman.d/mirrorlist\n")
-		pac_conf.write(f"\n")
-		pac_conf.write(f"[community]\n")
-		pac_conf.write(f"Include = /etc/pacman.d/mirrorlist\n")
+
+		if mirror_region.startswith(('file://', '/')):
+			pac_conf.write(f"[localrepo]\n")
+			pac_conf.write(f"SigLevel = Optional TrustAll\n")
+			pac_conf.write(f"Server = file://{mirror_region.replace('file://', '')}\n")
+			pac_conf.write(f"\n")
+			pac_conf.write(f"[core]\n")
+			pac_conf.write(f"Include = /etc/pacman.d/mirrorlist\n")
+			pac_conf.write(f"\n")
+			pac_conf.write(f"[extra]\n")
+			pac_conf.write(f"Include = /etc/pacman.d/mirrorlist\n")
+			pac_conf.write(f"\n")
+			pac_conf.write(f"[community]\n")
+			pac_conf.write(f"Include = /etc/pacman.d/mirrorlist\n")
+		else:
+			pac_conf.write(f"\n")
+			pac_conf.write(f"[core]\n")
+			pac_conf.write(f"Server = file://{mirror_region}\n")
+			pac_conf.write(f"\n")
+			pac_conf.write(f"[extra]\n")
+			pac_conf.write(f"Server = file://{mirror_region}\n")
+			pac_conf.write(f"\n")
+			pac_conf.write(f"[community]\n")
+			pac_conf.write(f"Server = file://{mirror_region}\n")
+
 
 elif mirror_region == 'copy':
 	raise RuntimeError("Copying pacman.conf is not yet supported, need to patch pacman.conf to include CacheDir and DBPath.")
