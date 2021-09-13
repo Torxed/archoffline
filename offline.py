@@ -222,13 +222,13 @@ if (mirror_region := archinstall.arguments.get('mirrors', '')).startswith(('file
 		else:
 			pac_conf.write(f"\n")
 			pac_conf.write(f"[core]\n")
-			pac_conf.write(f"Server = file://{mirror_region}\n")
+			pac_conf.write(f"Server = {mirror_region}\n")
 			pac_conf.write(f"\n")
 			pac_conf.write(f"[extra]\n")
-			pac_conf.write(f"Server = file://{mirror_region}\n")
+			pac_conf.write(f"Server = {mirror_region}\n")
 			pac_conf.write(f"\n")
 			pac_conf.write(f"[community]\n")
-			pac_conf.write(f"Server = file://{mirror_region}\n")
+			pac_conf.write(f"Server = {mirror_region}\n")
 
 
 elif mirror_region == 'copy':
