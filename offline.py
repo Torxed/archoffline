@@ -99,6 +99,10 @@ Arguments:
 	  This requires --archinstall to be given as well and is not impllied.
 	  autorun will also re-install archinstall to the latest version against --ai-branch
 
+	--silent
+	  Does not prompt for anything, will skip by default or error out if key parameters
+	  were not found during execution.
+
 Examples:
 
 	sudo python offline.py --mirrors=Sweden --packages="nano wget" --rebuild
@@ -277,7 +281,7 @@ if packages:
 		archinstall.log(e, fg='red')
 		exit(1)
 
-if not (aur_packages := archinstall.arguments.get('aur-packages', None)) and archinstall.arguments.get('verbose'):
+if not (aur_packages := archinstall.arguments.get('aur-packages', None)) and not archinstall.arguments.get('silent', None):
 	aur_packages = input('Enter any additional AUR packages to include aside from aur_packages.x86_64 (space separated): ').strip() or []
 
 if aur_packages:
