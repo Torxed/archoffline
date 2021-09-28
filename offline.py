@@ -452,7 +452,7 @@ if profiles:
 	archinstall.log(f"Adding in additional archinstall profiles:", profiles)
 	for profile in profiles:
 		if pathlib.Path(profile).exists() is False:
-			archinstall.log(f"Adding in additional archinstall profiles: {profiles}", fg="red", level=logging.Error)
+			archinstall.log(f"Adding in additional archinstall profiles: {profiles}", fg="red", level=logging.ERROR)
 			continue
 
 		archinstall.log(f"Copying profile '{profile}' over to the ISO's archinstall library.")
