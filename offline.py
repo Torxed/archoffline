@@ -1,6 +1,11 @@
 #!/usr/bin/python
 
-from archinstall import archinstall
+try:
+	# Try submodule-import
+	from archinstall import archinstall
+except ImportError:
+	# Try system-package import
+	import archinstall
 import glob
 import logging
 import os
