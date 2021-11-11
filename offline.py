@@ -286,10 +286,10 @@ if packages:
 		archinstall.log(e, fg='red')
 		exit(1)
 
-if not (aur_packages := archinstall.arguments.get('aur-packages', None)) or archinstall.arguments.get('silent', None) is None:
+if not archinstall.arguments.get('silent', None) and not (aur_packages := archinstall.arguments.get('aur-packages', None)):
 	aur_packages = input('Enter any additional AUR packages to include aside from aur_packages.x86_64 (space separated): ').strip() or []
 
-if aur_packages:
+if aur_packages and type(aur_packages) == str:
 	aur_packages = aur_packages.split(' ')
 
 	#archinstall.log(f"Validating additional packages...", level=logging.INFO)
