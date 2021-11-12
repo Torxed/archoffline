@@ -286,8 +286,11 @@ if packages:
 		archinstall.log(e, fg='red')
 		exit(1)
 
-if not archinstall.arguments.get('silent', None) and not (aur_packages := archinstall.arguments.get('aur-packages', None)):
-	aur_packages = input('Enter any additional AUR packages to include aside from aur_packages.x86_64 (space separated): ').strip() or []
+
+aur_packages = []
+if not archinstall.arguments.get('silent', None):
+	if not aur_packages and (aur_packages := archinstall.arguments.get('aur-packages', None)) is None:
+		aur_packages = input('Enter any additional AUR packages to include aside from aur_packages.x86_64 (space separated): ').strip() or []
 
 if aur_packages and type(aur_packages) == str:
 	aur_packages = aur_packages.split(' ')
