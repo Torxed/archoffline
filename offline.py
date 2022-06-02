@@ -288,7 +288,7 @@ if packages:
 
 
 aur_packages = []
-if not archinstall.arguments.get('silent', None):
+if archinstall.arguments.get('silent', None) is None:
 	if not aur_packages and (aur_packages := archinstall.arguments.get('aur-packages', None)) is None:
 		aur_packages = input('Enter any additional AUR packages to include aside from aur_packages.x86_64 (space separated): ').strip() or []
 
@@ -347,33 +347,44 @@ if aur_packages:
 	else:
 		archinstall.log(f"Syncronizing {len(aur_packages)} AUR packages (this might take a while)")
 
-	found_aur_user = archinstall.SysCommand(f"id {archinstall.arguments.get('aur-user', 'aoffline_usr')}").exit_code == 0
+	sudo_user = archinstall.arguments.get('aur-user', 'aoffline_usr')
+
+	try:
+		found_aur_user = archinstall.SysCommand(f"id {sudo_user}").exit_code == 0
+	except:
+		found_aur_user = False
+
 	found_aur_user_sudo_entry = False
+	found_aur_user_sudo_entry_in_sudoers = False
 	sudo_entries = []
 	with open('/etc/sudoers', 'r') as fh:
 		for line in fh:
 			sudo_entries.append(line)
-			if archinstall.arguments.get('aur-user', 'aoffline_usr') in line and not line.startswith('#'):
+			if sudo_user in line and not line.startswith('#'):
 				found_aur_user_sudo_entry = True
-
-	if not found_aur_user:
-		archinstall.log(f"Creating temporary build user {archinstall.arguments.get('aur-user', 'aoffline_usr')}")
-		archinstall.SysCommand(f"/usr/bin/useradd -m -N -s /bin/bash {archinstall.arguments.get('aur-user', 'aoffline_usr')}")
+				found_aur_user_sudo_entry_in_sudoers = True
 
 	if not found_aur_user_sudo_entry:
-		archinstall.log(f"Creating temporary sudoers entry for user {archinstall.arguments.get('aur-user', 'aoffline_usr')}")
-		with open('/etc/sudoers', 'a') as fh:
-			fh.write(f"\n{archinstall.arguments.get('aur-user', 'aoffline_usr')} ALL=(ALL) NOPASSWD: ALL\n")
+		found_aur_user_sudo_entry = pathlib.Path(f'/etc/sudoers.d/{sudo_user}').exists()
+
+	if not found_aur_user:
+		archinstall.log(f"Creating temporary build user {sudo_user}")
+		archinstall.SysCommand(f"/usr/bin/useradd -m -N -s /bin/bash {sudo_user}")
+
+	if not found_aur_user_sudo_entry:
+		archinstall.log(f"Creating temporary sudoers entry for user {sudo_user}")
+		with pathlib.Path(f'/etc/sudoers.d/{sudo_user}').open('w') as fh:
+			fh.write(f"{sudo_user} ALL=(ALL) NOPASSWD: ALL\n")
 
 	for package in aur_packages:
 		archinstall.log(f"Building AUR package {package}", level=logging.INFO, fg="yellow")
-		if not download_file(f"https://aur.archlinux.org/cgit/aur.git/snapshot/{package}.tar.gz", destination=f"/home/{archinstall.arguments.get('aur-user', 'aoffline_usr')}/", filename=f"{package}.tar.gz"):
+		if not download_file(f"https://aur.archlinux.org/cgit/aur.git/snapshot/{package}.tar.gz", destination=f"/home/{sudo_user}/", filename=f"{package}.tar.gz"):
 			archinstall.log(f"Could not retrieve {package} from: https://aur.archlinux.org/cgit/aur.git/snapshot/{package}.tar.gz", fg="red", level=logging.ERROR)
 			continue
 
-		archinstall.SysCommand(f"/usr/bin/chown {archinstall.arguments.get('aur-user', 'aoffline_usr')} /home/{archinstall.arguments.get('aur-user', 'aoffline_usr')}/{package}.tar.gz")
-		untar_file(f"/home/{archinstall.arguments.get('aur-user', 'aoffline_usr')}/{package}.tar.gz")
-		with open(f"/home/{archinstall.arguments.get('aur-user', 'aoffline_usr')}/{package}/PKGBUILD", 'r') as fh:
+		archinstall.SysCommand(f"/usr/bin/chown {sudo_user} /home/{sudo_user}/{package}.tar.gz")
+		untar_file(f"/home/{sudo_user}/{package}.tar.gz")
+		with open(f"/home/{sudo_user}/{package}/PKGBUILD", 'r') as fh:
 			PKGBUILD = fh.read()
 
 		# This regexp needs to accomodate multiple keys, as well as the logic below
@@ -381,35 +392,38 @@ if aur_packages:
 		if gpgkeys:
 			for key in gpgkeys:
 				key = key[13:].strip('(\')"')
-				archinstall.log(f"Adding GPG-key {key} to session for {archinstall.arguments.get('aur-user', 'aoffline_usr')}")
-				archinstall.SysCommand(f"/usr/bin/sudo -H -u {archinstall.arguments.get('aur-user', 'aoffline_usr')} /usr/bin/gpg --recv-keys {key}")
+				archinstall.log(f"Adding GPG-key {key} to session for {sudo_user}")
+				archinstall.SysCommand(f"/usr/bin/sudo -H -u {sudo_user} /usr/bin/gpg --recv-keys {key}")
 
-		if (build_handle := archinstall.SysCommand(f"/usr/bin/sudo -H -u {archinstall.arguments.get('aur-user', 'aoffline_usr')} /bin/bash -c \"cd /home/{archinstall.arguments.get('aur-user', 'aoffline_usr')}/{package}; makepkg --clean --force --cleanbuild --noconfirm --needed -s\"", peak_output=archinstall.arguments.get('verbose', False))).exit_code != 0:
+		if (build_handle := archinstall.SysCommand(f"/usr/bin/sudo -H -u {sudo_user} /bin/bash -c \"cd /home/{sudo_user}/{package}; makepkg --clean --force --cleanbuild --noconfirm --needed -s\"", peak_output=archinstall.arguments.get('verbose', False))).exit_code != 0:
 			archinstall.log(build_handle, level=logging.ERROR)
 			archinstall.log(f"Could not build {package}, see traceback above. Continuing to avoid re-build needs for the rest of the run and re-runs.", fg="red", level=logging.ERROR)
 		else:
-			if (built_package := glob.glob(f"/home/{archinstall.arguments.get('aur-user', 'aoffline_usr')}/{package}/*.tar.zst")):
+			if (built_package := glob.glob(f"/home/{sudo_user}/{package}/*.tar.zst")):
 				shutil.move(built_package[0], pacman_package_cache_dir)
 				archinstall.SysCommand(f"/usr/bin/chown root. {glob.glob(str(pacman_package_cache_dir)+'/'+package+'*.tar.zst')[0]}")
-				shutil.rmtree(f"/home/{archinstall.arguments.get('aur-user', 'aoffline_usr')}/{package}")
-				pathlib.Path(f"/home/{archinstall.arguments.get('aur-user', 'aoffline_usr')}/{package}.tar.gz").unlink()
+				shutil.rmtree(f"/home/{sudo_user}/{package}")
+				pathlib.Path(f"/home/{sudo_user}/{package}.tar.gz").unlink()
 			else:
 				archinstall.log(f"Could not build {package}, see traceback above. Continuing to avoid re-build needs for the rest of the run and re-runs.", fg="red", level=logging.ERROR)
 
 	if not found_aur_user:
-		archinstall.log(f"Removing temporary build user {archinstall.arguments.get('aur-user', 'aoffline_usr')}")
+		archinstall.log(f"Removing temporary build user {sudo_user}")
 		# Stop dirmngr and gpg-agent before removing home directory and running userdel
-		archinstall.SysCommand(f"/usr/bin/systemctl --machine={archinstall.arguments.get('aur-user', 'aoffline_usr')}@.host --user stop dirmngr.socket") # Doesn't do anything?
-		archinstall.SysCommand(f"/usr/bin/killall -u {archinstall.arguments.get('aur-user', 'aoffline_usr')}")
-		archinstall.SysCommand(f"/usr/bin/sudo -H -u {archinstall.arguments.get('aur-user', 'aoffline_usr')} /usr/bin/gpgconf --kill gpg-agent")
-		archinstall.SysCommand(f"/usr/bin/userdel {archinstall.arguments.get('aur-user', 'aoffline_usr')}")
-		shutil.rmtree(f"/home/{archinstall.arguments.get('aur-user', 'aoffline_usr')}")
+		archinstall.SysCommand(f"/usr/bin/systemctl --machine={sudo_user}@.host --user stop dirmngr.socket") # Doesn't do anything?
+		archinstall.SysCommand(f"/usr/bin/killall -u {sudo_user}")
+		archinstall.SysCommand(f"/usr/bin/sudo -H -u {sudo_user} /usr/bin/gpgconf --kill gpg-agent")
+		archinstall.SysCommand(f"/usr/bin/userdel {sudo_user}")
+		shutil.rmtree(f"/home/{sudo_user}")
 
 	if not found_aur_user_sudo_entry:
-		archinstall.log(f"Removing temporary sudoers entry for user {archinstall.arguments.get('aur-user', 'aoffline_usr')}")
-		with open('/etc/sudoers', 'w') as fh:
-			for line in sudo_entries:
-				fh.write(line)
+		if found_aur_user_sudo_entry_in_sudoers:
+			archinstall.log(f"Removing temporary sudoers entry for user {sudo_user}")
+			with open('/etc/sudoers', 'w') as fh:
+				for line in sudo_entries:
+					fh.write(line)
+		else:
+			pathlib.Path(f"/etc/sudoers.d/{sudo_user}").unlink()
 
 with open(f"{BUILD_DIR}/packages.x86_64", 'w') as x86_packages:
 	for package in packages:
@@ -454,7 +468,7 @@ if archinstall.arguments.get('archinstall', None):
 
 	if archinstall.arguments.get('autorun-archinstall', False):
 		with open(f'{BUILD_DIR}/airootfs/root/.zprofile', 'w') as zprofile:
-			zprofile.write('[[ -z $DISPLAY && $XDG_VTNR -eq 1 ]] && sh -c "cd /root/archinstall-git; pip uninstall archinstall -y; python setup.py install; cp examples/guided.py ./; python guided.py"')
+			zprofile.write('[[ -z $DISPLAY && $XDG_VTNR -eq 1 ]] && sh -c "cd /root/archinstall-git; pip uninstall archinstall -y; python setup.py install; cp examples/guided.py ./; python guided.py --offline"')
 
 if profiles:
 	archinstall.log(f"Adding in additional archinstall profiles:", profiles)
