@@ -1,0 +1,1 @@
+1668689056.141879 ['/usr/bin/pacman', '-Q', 'archisos']
