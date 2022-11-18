@@ -123,16 +123,13 @@ Examples:
 
 REPO_NAME=archinstall.arguments.get('repo', 'localrepo')
 BUILD_DIR=pathlib.Path(archinstall.arguments.get('builddir', './archiso_offline/')).absolute()
-pacman_temporary_database = pathlib.Path(f'{BUILD_DIR}/tmp.pacdb/').absolute()
-pacman_package_cache_dir = pathlib.Path(f'{BUILD_DIR}/airootfs/root/{REPO_NAME}/').absolute()
-pacman_build_config = f'{BUILD_DIR}/pacman.build.conf'
+PACMAN_TEMPORARY_BUILD_DB = pathlib.Path(f'{BUILD_DIR}/tmp.pacdb/').absolute()
+PACMAN_CACHE_DIR = pathlib.Path(f'{BUILD_DIR}/airootfs/root/{REPO_NAME}/').absolute()
+PACMAN_BUILD_CONF = f'{BUILD_DIR}/pacman.build.conf'
 
 @dataclasses.dataclass
 class PackageListing:
 	_inventory :list = dataclasses.field(default_factory=list)
-	_pacman_build_conf :str = pacman_build_config
-	_pacman_build_db :str = pacman_temporary_database
-	_pacman_cache_dir :str = pacman_package_cache_dir
 
 	def __add__(self, obj):
 		if type(obj) != PackageListing:
@@ -140,6 +137,9 @@ class PackageListing:
 
 		self._inventory += obj._inventory
 		return self
+
+	def __len__(self):
+		return len(self._inventory)
 
 	@property
 	def inventory(self):
@@ -164,6 +164,10 @@ class PackageListing:
 
 class BobTheBuilder():
 	_build_dir = BUILD_DIR # Copy the values from the global conf and freeze them
+	_pacman_build_conf = PACMAN_BUILD_CONF
+	_pacman_temporary_database :str = PACMAN_TEMPORARY_BUILD_DB
+	_pacman_package_cache_dir :str = PACMAN_CACHE_DIR
+	_repo_name :str = REPO_NAME
 
 	def __init__(self):
 		self._packages :PackageListing = PackageListing()
@@ -196,15 +200,22 @@ class BobTheBuilder():
 			archinstall.log(f"==> Missing requirement: {archinstall.stylize_output('archiso', fg='red')}", level=logging.ERROR)
 			exit(1)
 
-	def move_folder(self, source, destination):
-		if destination.exists():
+	def move_folder(self, source, destination, force=False):
+		if not source.exists():
+			return True
+
+		if destination.exists() and force is False:
 			if archinstall.arguments.get('silent', None):
 				archinstall.log(f"==> Backing up {source} but destination {destination} already existed.", level=logging.WARNING, fg="orange")
 			else:
 				archinstall.log(f"==> Backing up {source} but destination {destination} already exists.", level=logging.ERROR, fg="red")
 				exit(1)
 
+		if destination.exists():
+			shutil.rmtree(destination, ignore_errors=False)
+
 		shutil.move(source, destination)
+		archinstall.log(f"==> Backed up {source} to {destination}.", level=logging.ERROR, fg="green")
 
 	def clean_old_build_information(self):
 		if self._build_dir.exists():
@@ -219,7 +230,7 @@ class BobTheBuilder():
 				else:
 					shutil.copy2(obj, f"{self._build_dir}/{obj.split('/')[-1]}")
 
-		self._pacman_build_db.mkdir(parents=True, exist_ok=True)
+		self._pacman_temporary_database.mkdir(parents=True, exist_ok=True)
 
 	def disable_reflector(self):
 		reflector_config = self._build_dir/"airootfs"/"etc"/"systemd"/"system"/"reflector.service.d"/"archiso.conf"
@@ -240,8 +251,10 @@ class BobTheBuilder():
 
 	def apply_offline_patches(self):
 		self.disable_reflector()
+		archinstall.log(f"==> Applied offline patches.", level=logging.INFO, fg="green")
 
 	def get_mirrors_from_archinstall(self):
+		archinstall.log(f"==> Getting current mirror list from archinstall.", level=logging.INFO, fg="gray")
 		if not (mirror_region_data := archinstall.arguments.get('mirrors', None)):
 			mirror_region_data = archinstall.select_mirror_regions(archinstall.list_mirrors())
 			if not mirror_region_data:
@@ -251,17 +264,27 @@ class BobTheBuilder():
 		else:
 			mirror_region_data = archinstall.list_mirrors()[mirror_region_data]
 			mirrors = list(mirror_region_data.keys())
+
 		return mirrors
 
 	def create_pacman_conf_for_build(self, mode):
 		if mode == 'copy':
-			shutil.copy2('/etc/pacman.conf', self._pacman_build_conf)
+			with open('/etc/pacman.conf', 'r') as source_conf:
+				with open(self._pacman_build_conf, 'w') as dest_conf:
+					for line in source_conf:
+						if 'DBPath' in line:
+							line = f"DBPath      = {self._pacman_temporary_database}\n"
+						elif 'CacheDir' in line:
+							line = f"CacheDir    = {self._pacman_package_cache_dir}\n"
+
+						dest_conf.write(line)
+
 		else: # mode == 'new'
 			with open(self._pacman_build_conf, 'w') as pac_conf:
 				# Some general pacman options to setup before we decide the specific source for the packages
 				pac_conf.write(f"[options]\n")
-				pac_conf.write(f"DBPath      = {self._pacman_build_db}\n")
-				pac_conf.write(f"CacheDir    = {self._pacman_cache_dir}\n")
+				pac_conf.write(f"DBPath      = {self._pacman_temporary_database}\n")
+				pac_conf.write(f"CacheDir    = {self._pacman_package_cache_dir}\n")
 				pac_conf.write(f"HoldPkg     = pacman glibc\n")
 				pac_conf.write(f"Architecture = auto\n")
 				pac_conf.write(f"\n")
@@ -282,15 +305,18 @@ class BobTheBuilder():
 				pac_conf.write(f"[community]\n")
 				pac_conf.write(f"{mirror_str_list}\n")
 
+		archinstall.log(f"==> Created pacman conf for building.", level=logging.INFO, fg="green")
+
 	def load_default_packages(self):
 		packages = []
-		with open(f"{self._build_dir}/packages.x86_64", 'r') as packages:
-			for line in packages:
+		with open(f"{self._build_dir}/packages.x86_64", 'r') as packages_raw_file:
+			for line in packages_raw_file:
 				if line[0] == '#': continue
 				if len(line.strip()) == 0: continue
 				packages.append(line.strip())
 
 		self.packages += packages
+		archinstall.log(f"==> Default packages have been loaded from chosen Archiso configuration.", level=logging.INFO, fg="green")
 
 	def build_aur_packages(self):
 		if len(self._aur_packages) == 0:
@@ -360,8 +386,8 @@ class BobTheBuilder():
 				archinstall.log(f"Could not build {package}, see traceback above. Continuing to avoid re-build needs for the rest of the run and re-runs.", fg="red", level=logging.ERROR)
 			else:
 				if (built_package := glob.glob(f"/home/{sudo_user}/{package}/*.tar.zst")):
-					shutil.move(built_package[0], pacman_package_cache_dir)
-					archinstall.SysCommand(f"/usr/bin/chown root. {glob.glob(str(pacman_package_cache_dir)+'/'+package+'*.tar.zst')[0]}")
+					shutil.move(built_package[0], self._pacman_package_cache_dir)
+					archinstall.SysCommand(f"/usr/bin/chown root. {glob.glob(str(self._pacman_package_cache_dir)+'/'+package+'*.tar.zst')[0]}")
 					shutil.rmtree(f"/home/{sudo_user}/{package}")
 					pathlib.Path(f"/home/{sudo_user}/{package}.tar.gz").unlink()
 				else:
@@ -385,6 +411,8 @@ class BobTheBuilder():
 			else:
 				pathlib.Path(f"/etc/sudoers.d/{sudo_user}").unlink()
 
+		archinstall.log(f"==> All AUR packages have been built successfully.", level=logging.INFO, fg="green")
+
 	def write_packages_to_package_file(self):
 		with open(f"{BUILD_DIR}/packages.x86_64", 'w') as x86_packages:
 			for package in self.packages:
@@ -393,8 +421,28 @@ class BobTheBuilder():
 			for aur_package in self.aur_packages:
 				x86_packages.write(f"{aur_package}\n")
 
+		archinstall.log(f"==> Updated Archiso build configuration with all packages (official and AUR) before build.", level=logging.INFO, fg="green")
+
 	def download_package_list(self):
-		
+		if archinstall.arguments.get('verbose', None):
+			archinstall.log(f"Syncronizing packages using: pacman --noconfirm --config {self._pacman_build_conf} -Syw {' '.join(self.packages)}")
+		else:
+			archinstall.log(f"Syncronizing {len(self.packages)} packages (this might take a while)")
+
+		if (pacman := archinstall.SysCommand(f"pacman --noconfirm --config {self._pacman_build_conf} -Syw {' '.join(self.packages)}", peak_output=archinstall.arguments.get('verbose', False))).exit_code != 0:
+			archinstall.log(pacman, level=logging.ERROR, fg="red")
+			archinstall.log(pacman.exit_code)
+			exit(1)
+
+		archinstall.log(f"==> Finished downloading all the listed packages to package cache.", level=logging.INFO, fg="green")
+
+	def update_offline_repo_database(self):
+		if (repoadd := archinstall.SysCommand(f"/bin/bash -c \"repo-add {self._pacman_package_cache_dir}/{self._repo_name}.db.tar.gz {self._pacman_package_cache_dir}/{{*.pkg.tar.xz,*.pkg.tar.zst}}\"", peak_output=archinstall.arguments.get('verbose', False))).exit_code != 0:
+			archinstall.log(repoadd, level=logging.ERROR, fg="red")
+			archinstall.log(repoadd.exit_code)
+			exit(1)
+
+		archinstall.log(f"==> Finished updating offline repository in build environment.", level=logging.INFO, fg="green")
 
 x = BobTheBuilder()
 x.sanity_checks()
@@ -408,10 +456,11 @@ if archinstall.arguments.get('silent', False) is False:
 
 # Save potential cache directories to avoid network load
 if archinstall.arguments.get('save-offline-repository-cache', False):
-	x.move_folder(x._pacman_cache_dir, f"./{x._pacman_cache_dir.name}")
+	x.move_folder(x._pacman_package_cache_dir, pathlib.Path(f"./{x._pacman_package_cache_dir.name}"))
+	x.move_folder(x._pacman_temporary_database, pathlib.Path(f"./{x._pacman_temporary_database.name}"), force=True)
 
 if archinstall.arguments.get('save-builddir-package-cache', False):
-	x.move_folder(pacman_temporary_database, f"./{pacman_temporary_database.name}")
+	pass
 
 # Being build configuration
 if archinstall.arguments.get('rebuild', None):
@@ -424,11 +473,26 @@ x.load_default_packages()
 
 # Move back the saved caches
 if archinstall.arguments.get('save-offline-repository-cache', False):
-	x.move_folder(x._pacman_cache_dir, f"./{x._pacman_cache_dir.name}")
+	x.move_folder(x._pacman_package_cache_dir, pathlib.Path(f"./{x._pacman_package_cache_dir.name}"), force=True)
+	x.move_folder(x._pacman_temporary_database, pathlib.Path(f"./{x._pacman_temporary_database.name}"), force=True)
 
 if archinstall.arguments.get('save-builddir-package-cache', False):
-	x.move_folder(pacman_temporary_database, f"./{pacman_temporary_database.name}")
+	pass
+
+if archinstall.arguments.get('autorun-archinstall', False):
+	with open(f'{x._build_dir}/airootfs/root/.zprofile', 'w') as zprofile:
+		zprofile.write('[[ -z $DISPLAY && $XDG_VTNR -eq 1 ]] && sh -c "archinstall --offline"')
 
 x.build_aur_packages()
 x.download_package_list()
+x.update_offline_repo_database()
 x.write_packages_to_package_file()
+
+if archinstall.arguments.get('breakpoint', None):
+	input(f'Breakpoint before mkarchiso! Do final changes to {x._build_dir}')
+
+archinstall.log(f"==> Creating ISO (this will take time)", fg="teal", level=logging.INFO)
+if (iso := archinstall.SysCommand(f"/bin/bash -c \"mkarchiso -C {x._pacman_build_conf} -v -w {x._build_dir}/work/ -o {x._build_dir}/out/ {x._build_dir}\"", working_directory=x._build_dir, peak_output=archinstall.arguments.get('verbose', False))).exit_code != 0:
+	archinstall.log(iso, level=logging.ERROR, fg="red")
+	archinstall.log(iso.exit_code)
+	exit(1)
