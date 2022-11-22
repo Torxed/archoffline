@@ -122,10 +122,21 @@ Examples:
 	exit(0)
 
 REPO_NAME=archinstall.arguments.get('repo', 'localrepo')
-BUILD_DIR=pathlib.Path(archinstall.arguments.get('builddir', './archiso_offline/')).absolute()
-PACMAN_TEMPORARY_BUILD_DB = pathlib.Path(f'{BUILD_DIR}/tmp.pacdb/').absolute()
-PACMAN_CACHE_DIR = pathlib.Path(f'{BUILD_DIR}/airootfs/root/{REPO_NAME}/').absolute()
-PACMAN_BUILD_CONF = f'{BUILD_DIR}/pacman.build.conf'
+BUILD_DIR=pathlib.Path(archinstall.arguments.get('builddir', './archiso_offline/')).absolute().resolve()
+PACMAN_TEMPORARY_BUILD_DB = pathlib.Path(f'{BUILD_DIR}/tmp.pacdb/').absolute().resolve()
+PACMAN_CACHE_DIR = pathlib.Path(f'{BUILD_DIR}/airootfs/root/{REPO_NAME}/').absolute().resolve()
+PACMAN_SYNC_CONF = f'{BUILD_DIR}/pacman.sync.conf' # Used to sync packages to localrepo
+PACMAN_BUILD_CONF = f'{BUILD_DIR}/pacman.build.conf' # Used to sync packages to localrepo
+
+def download_file(url, destination, filename=""):
+	if not (dst := pathlib.Path(destination)).exists():
+		dst.mkdir(parents=True)
+	if dst.is_file():
+		return False
+
+	tmp_filename, headers = urllib.request.urlretrieve(url)
+	shutil.move(tmp_filename, f"{destination}/{filename}")
+	return True
 
 @dataclasses.dataclass
 class PackageListing:
@@ -153,20 +164,22 @@ class PackageListing:
 		if any(True for val in value if type(val) != str):
 			raise ValueError(f"Inventory items must be of type str [a-Z0-9-_]+")
 
-		archinstall.log(f"Validating packages: {value}", level=logging.INFO)
-		try:
-			archinstall.validate_package_list(value)
-		except archinstall.RequirementError as e:
-			archinstall.log(f"==> {e}", fg='red', level=logging.ERROR)
-			exit(1)
+		if archinstall.arguments.get('skip-validation', False) is not False:
+			archinstall.log(f"Validating packages: {value}", level=logging.INFO)
+			try:
+				archinstall.validate_package_list(value)
+			except archinstall.RequirementError as e:
+				archinstall.log(f"==> {e}", fg='red', level=logging.ERROR)
+				exit(1)
 
 		self._inventory = value
 
 class BobTheBuilder():
 	_build_dir = BUILD_DIR # Copy the values from the global conf and freeze them
+	_pacman_sync_conf = PACMAN_SYNC_CONF
 	_pacman_build_conf = PACMAN_BUILD_CONF
-	_pacman_temporary_database :str = PACMAN_TEMPORARY_BUILD_DB
-	_pacman_package_cache_dir :str = PACMAN_CACHE_DIR
+	_pacman_temporary_database :pathlib.Path = PACMAN_TEMPORARY_BUILD_DB
+	_pacman_package_cache_dir :pathlib.Path = PACMAN_CACHE_DIR
 	_repo_name :str = REPO_NAME
 
 	def __init__(self):
@@ -267,10 +280,10 @@ class BobTheBuilder():
 
 		return mirrors
 
-	def create_pacman_conf_for_build(self, mode):
+	def create_pacman_conf_for_sync(self, mode):
 		if mode == 'copy':
 			with open('/etc/pacman.conf', 'r') as source_conf:
-				with open(self._pacman_build_conf, 'w') as dest_conf:
+				with open(self._pacman_sync_conf, 'w') as dest_conf:
 					for line in source_conf:
 						if 'DBPath' in line:
 							line = f"DBPath      = {self._pacman_temporary_database}\n"
@@ -280,7 +293,7 @@ class BobTheBuilder():
 						dest_conf.write(line)
 
 		else: # mode == 'new'
-			with open(self._pacman_build_conf, 'w') as pac_conf:
+			with open(self._pacman_sync_conf, 'w') as pac_conf:
 				# Some general pacman options to setup before we decide the specific source for the packages
 				pac_conf.write(f"[options]\n")
 				pac_conf.write(f"DBPath      = {self._pacman_temporary_database}\n")
@@ -318,14 +331,16 @@ class BobTheBuilder():
 		self.packages += packages
 		archinstall.log(f"==> Default packages have been loaded from chosen Archiso configuration.", level=logging.INFO, fg="green")
 
+	def package_exists(self, package_name):
+		return glob.glob(str(self._pacman_package_cache_dir / f"{package_name}*.pkg*"))
+
 	def build_aur_packages(self):
+		archinstall.log(f"==> Checking/Setting up temporary AUR build environment", level=logging.INFO, fg="teal")
 		if len(self._aur_packages) == 0:
 			return True
 
-		if archinstall.arguments.get('verbose', None):
-			archinstall.log(f"Syncronizing AUR packages: {self._aur_packages}")
-		else:
-			archinstall.log(f"Syncronizing {len(self._aur_packages)} AUR packages (this might take a while)")
+		def untar_file(file):
+			archinstall.SysCommand(f"/usr/bin/sudo -H -u {archinstall.arguments.get('aur-user', 'aoffline_usr')} /usr/bin/tar --directory /home/{archinstall.arguments.get('aur-user', 'aoffline_usr')}/ -xvzf {file}")
 
 		sudo_user = archinstall.arguments.get('aur-user', 'aoffline_usr')
 		try:
@@ -355,8 +370,19 @@ class BobTheBuilder():
 			with pathlib.Path(f'/etc/sudoers.d/{sudo_user}').open('w') as fh:
 				fh.write(f"{sudo_user} ALL=(ALL) NOPASSWD: ALL\n")
 
+		if archinstall.arguments.get('verbose', None):
+			archinstall.log(f"==> Syncronizing AUR packages: {self._aur_packages}")
+		else:
+			archinstall.log(f"==> Syncronizing {len(self._aur_packages)} AUR packages (this might take a while)")
+		# Try:
+		# error = False
 		for package in self.aur_packages:
-			if package.exists() and archinstall.arguments.get('rebuild', False) is False:
+			if archinstall.arguments.get('verbose', None):
+				archinstall.log(f"==> Starting build process for: {package}")
+
+			if self.package_exists(package) and archinstall.arguments.get('rebuild', False) is False:
+				if archinstall.arguments.get('verbose', None):
+					archinstall.log(f"==> Package existed in cache", level=logging.INFO, fg="green")
 				continue
 
 			archinstall.log(f"Building AUR package {package}", level=logging.INFO, fg="yellow")
@@ -365,6 +391,7 @@ class BobTheBuilder():
 				continue
 
 			archinstall.SysCommand(f"/usr/bin/chown {sudo_user} /home/{sudo_user}/{package}.tar.gz")
+
 			untar_file(f"/home/{sudo_user}/{package}.tar.gz")
 			with open(f"/home/{sudo_user}/{package}/PKGBUILD", 'r') as fh:
 				PKGBUILD = fh.read()
@@ -386,12 +413,17 @@ class BobTheBuilder():
 				archinstall.log(f"Could not build {package}, see traceback above. Continuing to avoid re-build needs for the rest of the run and re-runs.", fg="red", level=logging.ERROR)
 			else:
 				if (built_package := glob.glob(f"/home/{sudo_user}/{package}/*.tar.zst")):
-					shutil.move(built_package[0], self._pacman_package_cache_dir)
+					archinstall.log(f"==> Moving package {built_package[0]} to {self._pacman_package_cache_dir}", level=logging.INFO, fg="gray")
+					if self._pacman_package_cache_dir.exists() is False:
+						self._pacman_package_cache_dir.mkdir()
+
+					shutil.move(built_package[0], f"{self._pacman_package_cache_dir}/")
 					archinstall.SysCommand(f"/usr/bin/chown root. {glob.glob(str(self._pacman_package_cache_dir)+'/'+package+'*.tar.zst')[0]}")
 					shutil.rmtree(f"/home/{sudo_user}/{package}")
 					pathlib.Path(f"/home/{sudo_user}/{package}.tar.gz").unlink()
 				else:
 					archinstall.log(f"Could not build {package}, see traceback above. Continuing to avoid re-build needs for the rest of the run and re-runs.", fg="red", level=logging.ERROR)
+		# Except: safely remove the user if needed and the nexit
 
 		if not found_aur_user:
 			archinstall.log(f"Removing temporary build user {sudo_user}")
@@ -411,6 +443,8 @@ class BobTheBuilder():
 			else:
 				pathlib.Path(f"/etc/sudoers.d/{sudo_user}").unlink()
 
+		# If error, raise DependencyError
+
 		archinstall.log(f"==> All AUR packages have been built successfully.", level=logging.INFO, fg="green")
 
 	def write_packages_to_package_file(self):
@@ -425,11 +459,11 @@ class BobTheBuilder():
 
 	def download_package_list(self):
 		if archinstall.arguments.get('verbose', None):
-			archinstall.log(f"Syncronizing packages using: pacman --noconfirm --config {self._pacman_build_conf} -Syw {' '.join(self.packages)}")
+			archinstall.log(f"==> Syncronizing packages using: pacman --noconfirm --config {self._pacman_sync_conf} -Syw {' '.join(self.packages)}")
 		else:
-			archinstall.log(f"Syncronizing {len(self.packages)} packages (this might take a while)")
+			archinstall.log(f"==> Syncronizing {len(self.packages)} packages (this might take a while)")
 
-		if (pacman := archinstall.SysCommand(f"pacman --noconfirm --config {self._pacman_build_conf} -Syw {' '.join(self.packages)}", peak_output=archinstall.arguments.get('verbose', False))).exit_code != 0:
+		if (pacman := archinstall.SysCommand(f"pacman --noconfirm --config {self._pacman_sync_conf} -Syw {' '.join(self.packages)}", peak_output=archinstall.arguments.get('verbose', False))).exit_code != 0:
 			archinstall.log(pacman, level=logging.ERROR, fg="red")
 			archinstall.log(pacman.exit_code)
 			exit(1)
@@ -437,6 +471,8 @@ class BobTheBuilder():
 		archinstall.log(f"==> Finished downloading all the listed packages to package cache.", level=logging.INFO, fg="green")
 
 	def update_offline_repo_database(self):
+		archinstall.log(f"==> Building offline repository database in build environment.", level=logging.INFO, fg="teal")
+		
 		if (repoadd := archinstall.SysCommand(f"/bin/bash -c \"repo-add {self._pacman_package_cache_dir}/{self._repo_name}.db.tar.gz {self._pacman_package_cache_dir}/{{*.pkg.tar.xz,*.pkg.tar.zst}}\"", peak_output=archinstall.arguments.get('verbose', False))).exit_code != 0:
 			archinstall.log(repoadd, level=logging.ERROR, fg="red")
 			archinstall.log(repoadd.exit_code)
@@ -444,15 +480,41 @@ class BobTheBuilder():
 
 		archinstall.log(f"==> Finished updating offline repository in build environment.", level=logging.INFO, fg="green")
 
+	def create_pacman_conf_for_build(self):
+		with open(self._pacman_build_conf, 'w') as pac_conf:
+			pac_conf.write(f"[options]\n")
+			pac_conf.write(f"DBPath      = {self._pacman_temporary_database}\n")
+			pac_conf.write(f"CacheDir    = {self._pacman_package_cache_dir}\n")
+			pac_conf.write(f"HoldPkg     = pacman glibc\n")
+			pac_conf.write(f"Architecture = auto\n")
+			pac_conf.write(f"\n")
+			pac_conf.write(f"CheckSpace\n")
+			pac_conf.write(f"\n")
+			pac_conf.write(f"SigLevel    = Required DatabaseOptional\n")
+			pac_conf.write(f"LocalFileSigLevel = Optional\n")
+			pac_conf.write(f"\n")
+
+			
+			# Local mirror options
+			pac_conf.write(f"[{self._repo_name}]\n")
+			pac_conf.write(f"SigLevel = Optional TrustAll\n")
+			pac_conf.write(f"Server = file://{self._pacman_package_cache_dir}\n")
+
 x = BobTheBuilder()
 x.sanity_checks()
 
 if archinstall.arguments.get('silent', False) is False:
 	if packages := archinstall.arguments.get('packages', '').split():
 		x.packages = packages
+	else:
+		archinstall.log(f"--- The parameter --packages was empty, asking user for more questions", level=logging.INFO, fg="gray")
+		x.packages = input('Any additional packages to add to offline repo: ').split()
 
 	if aur_packages := archinstall.arguments.get('aur-packages', '').split():
 		x.aur_packages = aur_packages
+	else:
+		archinstall.log(f"--- The parameter --aur-packages was empty, asking user for more questions", level=logging.INFO, fg="gray")
+		x.aur_packages = input('Any AUR packages to add to offline repo: ').split()
 
 # Save potential cache directories to avoid network load
 if archinstall.arguments.get('save-offline-repository-cache', False):
@@ -468,7 +530,7 @@ if archinstall.arguments.get('rebuild', None):
 
 x.create_build_dir_for_conf(archinstall.arguments.get('archiso-conf', 'releng'))
 x.apply_offline_patches()
-x.create_pacman_conf_for_build(archinstall.arguments.get('pacman-conf', 'copy'))
+x.create_pacman_conf_for_sync(archinstall.arguments.get('pacman-conf', 'copy'))
 x.load_default_packages()
 
 # Move back the saved caches
@@ -487,6 +549,7 @@ x.build_aur_packages()
 x.download_package_list()
 x.update_offline_repo_database()
 x.write_packages_to_package_file()
+x.create_pacman_conf_for_build()
 
 if archinstall.arguments.get('breakpoint', None):
 	input(f'Breakpoint before mkarchiso! Do final changes to {x._build_dir}')
@@ -496,3 +559,5 @@ if (iso := archinstall.SysCommand(f"/bin/bash -c \"mkarchiso -C {x._pacman_build
 	archinstall.log(iso, level=logging.ERROR, fg="red")
 	archinstall.log(iso.exit_code)
 	exit(1)
+
+archinstall.log(f"==> Your ISO has been created in {x._build_dir}/out/", fg="green", level=logging.INFO)
