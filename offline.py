@@ -450,7 +450,7 @@ class BobTheBuilder():
 		archinstall.log(f"==> All AUR packages have been built successfully.", level=logging.INFO, fg="green")
 
 	def write_packages_to_package_file(self):
-		with open(f"{BUILD_DIR}/packages.x86_64", 'w') as x86_packages:
+		with open(f"{self._build_dir}/packages.x86_64", 'w') as x86_packages:
 			for package in self.packages:
 				x86_packages.write(f"{package}\n")
 
@@ -502,6 +502,59 @@ class BobTheBuilder():
 			pac_conf.write(f"SigLevel = Optional TrustAll\n")
 			pac_conf.write(f"Server = file://{self._pacman_package_cache_dir}\n")
 
+	def copy_in_external_resources(self, resources :list = []):
+		if not resources:
+			return
+		
+		archinstall.log(f"==> Grabbing external resources and placing them in ISO build root.", level=logging.INFO, fg="teal")
+		for resource in resources:
+			if not len(resource):
+				continue
+
+			if not resource.startswith(('https://', 'git://', '/')):
+				archinstall.log(f"Resource ignored, isn't a recognized URL/path: {resource}", fg="red", level=logging.ERROR)
+				continue
+
+			if resource.startswith('https://'):
+				if not download_file(resource, destination=f"{self._build_dir}/airootfs/root/resources/"):
+					archinstall.log(f"Could not retrieve resource {resource}", fg="red", level=logging.ERROR)
+					continue
+					
+			elif resource.startswith('git://') or resource.endswith('.git'):
+				try:
+					archinstall.SysCommand(f"/bin/bash -c \"cd {self._build_dir}/airootfs/root/resources; git clone -b {resource}\"", working_directory=f'{self._build_dir}/airootfs/root/resources')
+				except archinstall.SysCallError as error:
+					archinstall.log(f"Resource {resource} could not be retrieved: {error}", fg="red", level=logging.ERROR)
+					continue
+			else:
+				if os.path.isdir(resource):
+					shutil.copytree(f"{resource}", f"{self._build_dir}/airootfs/root/resources/", symlinks=True)
+				else:
+					shutil.copy2(f"{resource}", f"{self._build_dir}/airootfs/root/resources/")
+		archinstall.log(f"==> Finished gathering external resources.", level=logging.INFO, fg="green")
+
+	def archinstall(self, url :str = 'https://github.com/archlinux/archinstall.git', branch :str = 'master'):
+		archinstall.log(f"==> Cloning in archinstall to ISO build root under /root/archinstall-git.", level=logging.INFO, fg="teal")
+		
+		try:
+			archinstall.SysCommand(f"/bin/bash -c \"cd {self._build_dir}/airootfs/root/; git clone -b {branch} {url} archinstall-git\"", working_directory=f'{self._build_dir}/airootfs/root/')
+		except SysCallError as error:
+			archinstall.log(error, level=logging.ERROR, fg="red")
+			exit(1)
+
+		archinstall.log(f"==> Done cloning archinstall branch {branch} into buid root.", level=logging.INFO, fg="green")
+
+	def insert_autorun_string(self, string :str):
+		if not string:
+			return
+
+		if '"' in string:
+			archinstall.log(f"Warning, the --autorun string contains \" and that causes escape issues in the bash string:", f'[[ -z $DISPLAY && $XDG_VTNR -eq 1 ]] && sh -c "{string}"', level=logging.ERROR, fg="red")
+			exit(1)
+
+		with open(f'{self._build_dir}/airootfs/root/.zprofile', 'w') as zprofile:
+			zprofile.write(f'[[ -z $DISPLAY && $XDG_VTNR -eq 1 ]] && sh -c "{string}"')
+
 x = BobTheBuilder()
 x.sanity_checks()
 
@@ -552,6 +605,11 @@ x.download_package_list()
 x.update_offline_repo_database()
 x.write_packages_to_package_file()
 x.create_pacman_conf_for_build()
+x.copy_in_external_resources(archinstall.arguments.get('resources', None).split(','))
+x.insert_autorun_string(archinstall.arguments.get('autorun', None))
+
+if archinstall.arguments.get('archinstall'):
+	x.archinstall(url=archinstall.arguments.get('ai-url', 'https://github.com/archlinux/archinstall.git'), branch=archinstall.arguments.get('ai-branch', 'master'))
 
 if archinstall.arguments.get('breakpoint', None):
 	input(f'Breakpoint before mkarchiso! Do final changes to {x._build_dir}')
