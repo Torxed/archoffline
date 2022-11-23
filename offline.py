@@ -371,9 +371,9 @@ class BobTheBuilder():
 				fh.write(f"{sudo_user} ALL=(ALL) NOPASSWD: ALL\n")
 
 		if archinstall.arguments.get('verbose', None):
-			archinstall.log(f"==> Syncronizing AUR packages: {self._aur_packages}")
+			archinstall.log(f"==> Syncronizing AUR packages: {self._aur_packages}", level=logging.INFO, fg="teal")
 		else:
-			archinstall.log(f"==> Syncronizing {len(self._aur_packages)} AUR packages (this might take a while)")
+			archinstall.log(f"==> Syncronizing {len(self._aur_packages)} AUR packages (this might take a while)", level=logging.INFO, fg="teal")
 		# Try:
 		# error = False
 		for package in self.aur_packages:
@@ -385,7 +385,7 @@ class BobTheBuilder():
 					archinstall.log(f"==> Package existed in cache", level=logging.INFO, fg="green")
 				continue
 
-			archinstall.log(f"Building AUR package {package}", level=logging.INFO, fg="yellow")
+			archinstall.log(f"==> Building AUR package {package}", level=logging.INFO, fg="gray")
 			if not download_file(f"https://aur.archlinux.org/cgit/aur.git/snapshot/{package}.tar.gz", destination=f"/home/{sudo_user}/", filename=f"{package}.tar.gz"):
 				archinstall.log(f"Could not retrieve {package} from: https://aur.archlinux.org/cgit/aur.git/snapshot/{package}.tar.gz", fg="red", level=logging.ERROR)
 				continue
@@ -605,7 +605,7 @@ x.download_package_list()
 x.update_offline_repo_database()
 x.write_packages_to_package_file()
 x.create_pacman_conf_for_build()
-x.copy_in_external_resources(archinstall.arguments.get('resources', None).split(','))
+x.copy_in_external_resources(archinstall.arguments.get('resources', '').split(','))
 x.insert_autorun_string(archinstall.arguments.get('autorun', None))
 
 if archinstall.arguments.get('archinstall'):
