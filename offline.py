@@ -412,13 +412,15 @@ class BobTheBuilder():
 				archinstall.log(build_handle, level=logging.ERROR)
 				archinstall.log(f"Could not build {package}, see traceback above. Continuing to avoid re-build needs for the rest of the run and re-runs.", fg="red", level=logging.ERROR)
 			else:
-				if (built_package := glob.glob(f"/home/{sudo_user}/{package}/*.tar.zst")):
-					archinstall.log(f"==> Moving package {built_package[0]} to {self._pacman_package_cache_dir}", level=logging.INFO, fg="gray")
+				if (built_packages := glob.glob(f"/home/{sudo_user}/{package}/*.tar.zst")):
+					archinstall.log(f"==> Moving package {built_packages[0]} to {self._pacman_package_cache_dir}", level=logging.INFO, fg="gray")
 					if self._pacman_package_cache_dir.exists() is False:
 						self._pacman_package_cache_dir.mkdir()
 
-					shutil.move(built_package[0], f"{self._pacman_package_cache_dir}/")
-					archinstall.SysCommand(f"/usr/bin/chown root. {glob.glob(str(self._pacman_package_cache_dir)+'/'+package+'*.tar.zst')[0]}")
+					for built_package in built_packages:
+						shutil.move(built_package, f"{self._pacman_package_cache_dir}/")
+						archinstall.SysCommand(f"/usr/bin/chown root. {glob.glob(str(self._pacman_package_cache_dir)+f"/{built_package}")}")
+					
 					shutil.rmtree(f"/home/{sudo_user}/{package}")
 					pathlib.Path(f"/home/{sudo_user}/{package}.tar.gz").unlink()
 				else:
