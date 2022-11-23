@@ -419,7 +419,7 @@ class BobTheBuilder():
 
 					for built_package in built_packages:
 						shutil.move(built_package, f"{self._pacman_package_cache_dir}/")
-						archinstall.SysCommand(f"/usr/bin/chown root. {glob.glob(f'{self._pacman_package_cache_dir}/{built_package}')}")
+						archinstall.SysCommand(f"/usr/bin/chown -R root: {glob.glob(f'{self._pacman_package_cache_dir}/*')}")
 					
 					shutil.rmtree(f"/home/{sudo_user}/{package}")
 					pathlib.Path(f"/home/{sudo_user}/{package}.tar.gz").unlink()
