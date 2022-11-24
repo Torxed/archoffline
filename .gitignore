@@ -3,3 +3,4 @@ install.log
 kvm.py
 *.sh
 dist/
+**/**__pycache__**
