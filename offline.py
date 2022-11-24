@@ -571,7 +571,7 @@ class BobTheBuilder():
 		with open(f'{self._build_dir}/airootfs/root/.zprofile', 'w') as zprofile:
 			zprofile.write(f'[[ -z $DISPLAY && $XDG_VTNR -eq 1 ]] && sh -c "{string}"')
 
-def main():
+def main() -> None:
 	x = BobTheBuilder()
 	x.sanity_checks()
 
