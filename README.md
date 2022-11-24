@@ -3,7 +3,7 @@ Offline installations. It requires root privileges due to archiso itself.
 
 Usage:
 
-	sudo python offline.py
+	sudo python -m archoffline
 
 Arguments:
 
@@ -90,4 +90,4 @@ Arguments:
 
 Examples:
 
-	sudo python offline.py --mirrors=Sweden --packages="nano wget" --rebuild
+	sudo python -m archoffline --mirrors=Sweden --packages="nano wget" --rebuild
