@@ -155,7 +155,7 @@ def download_file(url :str, destination :str, filename :str = "") -> bool:
 class PackageListing:
 	_inventory :list[str] = dataclasses.field(default_factory=list)
 
-	def __add__(self, obj :PackageListing) -> PackageListing:
+	def __add__(self, obj :'PackageListing') -> 'PackageListing':
 		if type(obj) != PackageListing:
 			raise ValueError(f"PackageListing requires addition object to be of PackageListing() too")
 
@@ -571,58 +571,62 @@ class BobTheBuilder():
 		with open(f'{self._build_dir}/airootfs/root/.zprofile', 'w') as zprofile:
 			zprofile.write(f'[[ -z $DISPLAY && $XDG_VTNR -eq 1 ]] && sh -c "{string}"')
 
-x = BobTheBuilder()
-x.sanity_checks()
+def main():
+	x = BobTheBuilder()
+	x.sanity_checks()
 
-if archinstall.arguments.get('silent', False) is False:
-	if packages := archinstall.arguments.get('packages', '').split():
-		x.packages = packages
-	else:
-		archinstall.log(f"--- The parameter --packages was empty, asking user for more questions", level=logging.INFO, fg="gray")
-		x.packages = input('Any additional packages to add to offline repo: ').split()
+	if archinstall.arguments.get('silent', False) is False:
+		if packages := archinstall.arguments.get('packages', '').split():
+			x.packages = packages
+		else:
+			archinstall.log(f"--- The parameter --packages was empty, asking user for more questions", level=logging.INFO, fg="gray")
+			x.packages = input('Any additional packages to add to offline repo: ').split()
 
-	if aur_packages := archinstall.arguments.get('aur-packages', '').split():
-		x.aur_packages = aur_packages
-	else:
-		archinstall.log(f"--- The parameter --aur-packages was empty, asking user for more questions", level=logging.INFO, fg="gray")
-		x.aur_packages = input('Any AUR packages to add to offline repo: ').split()
+		if aur_packages := archinstall.arguments.get('aur-packages', '').split():
+			x.aur_packages = aur_packages
+		else:
+			archinstall.log(f"--- The parameter --aur-packages was empty, asking user for more questions", level=logging.INFO, fg="gray")
+			x.aur_packages = input('Any AUR packages to add to offline repo: ').split()
 
-# Save potential cache directories to avoid network load
-if archinstall.arguments.get('save-offline-repository-cache', False):
-	x.move_folder(x._pacman_package_cache_dir, pathlib.Path(f"./{x._pacman_package_cache_dir.name}"))
-	x.move_folder(x._pacman_temporary_database, pathlib.Path(f"./{x._pacman_temporary_database.name}"), force=True)
+	# Save potential cache directories to avoid network load
+	if archinstall.arguments.get('save-offline-repository-cache', False):
+		x.move_folder(x._pacman_package_cache_dir, pathlib.Path(f"./{x._pacman_package_cache_dir.name}"))
+		x.move_folder(x._pacman_temporary_database, pathlib.Path(f"./{x._pacman_temporary_database.name}"), force=True)
 
-# Being build configuration
-if archinstall.arguments.get('rebuild', None):
-	x.clean_old_build_information()
+	# Being build configuration
+	if archinstall.arguments.get('rebuild', None):
+		x.clean_old_build_information()
 
-x.create_build_dir_for_conf(archinstall.arguments.get('archiso-conf', 'releng'))
-x.apply_offline_patches()
-x.create_pacman_conf_for_sync(archinstall.arguments.get('pacman-conf', 'copy'))
-x.load_default_packages()
+	x.create_build_dir_for_conf(archinstall.arguments.get('archiso-conf', 'releng'))
+	x.apply_offline_patches()
+	x.create_pacman_conf_for_sync(archinstall.arguments.get('pacman-conf', 'copy'))
+	x.load_default_packages()
 
-# Move back the saved caches
-if archinstall.arguments.get('save-offline-repository-cache', False):
-	x.move_folder(x._pacman_package_cache_dir, pathlib.Path(f"./{x._pacman_package_cache_dir.name}"), force=True)
-	x.move_folder(x._pacman_temporary_database, pathlib.Path(f"./{x._pacman_temporary_database.name}"), force=True)
+	# Move back the saved caches
+	if archinstall.arguments.get('save-offline-repository-cache', False):
+		x.move_folder(x._pacman_package_cache_dir, pathlib.Path(f"./{x._pacman_package_cache_dir.name}"), force=True)
+		x.move_folder(x._pacman_temporary_database, pathlib.Path(f"./{x._pacman_temporary_database.name}"), force=True)
 
-x.build_aur_packages()
-x.download_package_list()
-x.update_offline_repo_database()
-x.write_packages_to_package_file()
-x.create_pacman_conf_for_build()
-x.copy_in_external_resources(archinstall.arguments.get('resources', '').split(','))
-x.insert_autorun_string(archinstall.arguments.get('autorun', None))
+	x.build_aur_packages()
+	x.download_package_list()
+	x.update_offline_repo_database()
+	x.write_packages_to_package_file()
+	x.create_pacman_conf_for_build()
+	x.copy_in_external_resources(archinstall.arguments.get('resources', '').split(','))
+	x.insert_autorun_string(archinstall.arguments.get('autorun', None))
 
-if archinstall.arguments.get('archinstall'):
-	x.archinstall(url=archinstall.arguments.get('ai-url', 'https://github.com/archlinux/archinstall.git'), branch=archinstall.arguments.get('ai-branch', 'master'))
+	if archinstall.arguments.get('archinstall'):
+		x.archinstall(url=archinstall.arguments.get('ai-url', 'https://github.com/archlinux/archinstall.git'), branch=archinstall.arguments.get('ai-branch', 'master'))
 
-if archinstall.arguments.get('breakpoint', None):
-	input(f'Breakpoint before mkarchiso! Do final changes to {x._build_dir}')
+	if archinstall.arguments.get('breakpoint', None):
+		input(f'Breakpoint before mkarchiso! Do final changes to {x._build_dir}')
 
-archinstall.log(f"==> Creating ISO (this will take time)", fg="teal", level=logging.INFO)
-if (iso := archinstall.SysCommand(f"/bin/bash -c \"mkarchiso -C {x._pacman_build_conf} -v -w {x._build_dir}/work/ -o {x._build_dir}/out/ {x._build_dir}\"", working_directory=str(x._build_dir), peak_output=archinstall.arguments.get('verbose', False))).exit_code != 0:
-	archinstall.log(str(iso), level=logging.ERROR, fg="red")
-	exit(1)
+	archinstall.log(f"==> Creating ISO (this will take time)", fg="teal", level=logging.INFO)
+	if (iso := archinstall.SysCommand(f"/bin/bash -c \"mkarchiso -C {x._pacman_build_conf} -v -w {x._build_dir}/work/ -o {x._build_dir}/out/ {x._build_dir}\"", working_directory=str(x._build_dir), peak_output=archinstall.arguments.get('verbose', False))).exit_code != 0:
+		archinstall.log(str(iso), level=logging.ERROR, fg="red")
+		exit(1)
 
-archinstall.log(f"==> Your ISO has been created in {x._build_dir}/out/", fg="green", level=logging.INFO)
+	archinstall.log(f"==> Your ISO has been created in {x._build_dir}/out/", fg="green", level=logging.INFO)
+
+if __name__ == '__main__':
+	main()
