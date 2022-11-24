@@ -19,7 +19,7 @@ import stat
 import urllib.request
 
 if archinstall.arguments.get('help', None):
-	print(f"""
+	print("""
 This is a helper script to create Arch Linux ISO's that support
 Offline installations. It requires root privileges due to archiso itself.
 
@@ -44,6 +44,9 @@ Arguments:
 	  A space separated list of packages to ship with the iso
 	  aside from the default packages in archiso packages.x86_64
 
+	--skip-validation
+	  Skips validation of packages and AUR packages. Improves build speed.
+
 	--rebuild
 	  Cleans and re-creates the builddir and other dependencies
 
@@ -64,19 +67,15 @@ Arguments:
 	  Enables printout for all the syscalls that are being made.
 	  (For instance output from mkarchiso)
 
-	--boot
-	  Boots the built ISO, either after --rebuild or old build.
-
 	--archinstall
-	  Clones in archinstall with the branch given on --ai-branch in /root/archinstall-git.
+	  Clones in archinstall to /root/archinstall-git with the given --ai-branch and
+	  --ai-url.
 	  (This is optional, archinstall stable is shipped as a package already)
 
 	--ai-branch=<archinstall branch to clone>
 	  This can override the default `master` branch.
 
-	--profiles=[a commaseparated list of profile paths]
-	  If a profile is given, it is copied into archinstall master directory.
-	  This option implies --archinstall is given.
+    --ai-url=https://github.com/archlinux/archinstall.git
 
 	--aur-packages="<list of AUR packages>"
 	  A space separated list of AUR packages that will be built and
@@ -100,10 +99,12 @@ Arguments:
 	  Add a script that will be run from within Archiso and executed before
 	  the ISO is finalized.
 
-	--autorun-archinstall
-	  This will auto-launch archinstall when the ISO boots.
-	  This requires --archinstall to be given as well and is not impllied.
-	  autorun will also re-install archinstall to the latest version against --ai-branch
+	--autorun="<commands to autorun on every boot>"
+	  This injects a .zprofile auto-run string, be mindful of quotation issues:
+	  Injects: [[ -z $DISPLAY && $XDG_VTNR -eq 1 ]] && sh -c "{string}"
+
+	--save-offline-repository-cache
+	  Saves the local repository in the ISO defined by --repo.
 
 	--silent
 	  Does not prompt for anything, will skip by default or error out if key parameters
@@ -576,9 +577,6 @@ if archinstall.arguments.get('save-offline-repository-cache', False):
 	x.move_folder(x._pacman_package_cache_dir, pathlib.Path(f"./{x._pacman_package_cache_dir.name}"))
 	x.move_folder(x._pacman_temporary_database, pathlib.Path(f"./{x._pacman_temporary_database.name}"), force=True)
 
-if archinstall.arguments.get('save-builddir-package-cache', False):
-	pass
-
 # Being build configuration
 if archinstall.arguments.get('rebuild', None):
 	x.clean_old_build_information()
@@ -592,13 +590,6 @@ x.load_default_packages()
 if archinstall.arguments.get('save-offline-repository-cache', False):
 	x.move_folder(x._pacman_package_cache_dir, pathlib.Path(f"./{x._pacman_package_cache_dir.name}"), force=True)
 	x.move_folder(x._pacman_temporary_database, pathlib.Path(f"./{x._pacman_temporary_database.name}"), force=True)
-
-if archinstall.arguments.get('save-builddir-package-cache', False):
-	pass
-
-if archinstall.arguments.get('autorun-archinstall', False):
-	with open(f'{x._build_dir}/airootfs/root/.zprofile', 'w') as zprofile:
-		zprofile.write('[[ -z $DISPLAY && $XDG_VTNR -eq 1 ]] && sh -c "archinstall --offline"')
 
 x.build_aur_packages()
 x.download_package_list()
