@@ -18,6 +18,8 @@ import shutil
 import stat
 import urllib.request
 
+__version__ = '0.0.1'
+
 if archinstall.arguments.get('help', None):
 	print("""
 This is a helper script to create Arch Linux ISO's that support
@@ -106,6 +108,14 @@ Arguments:
 	--save-offline-repository-cache
 	  Saves the local repository in the ISO defined by --repo.
 
+	--mirror-region=<region>
+	  When --pacman-conf is set to "new" the new pacman conf will use this
+	  mirror region when setting the servers to sync from.
+
+	--pacman-conf=copy[|new]
+	  Defines if the sync configuration for pacman should use the build-machine-conf for
+	  pacman via "copy" or to create a completely new configuration with --mirror-region as source.
+
 	--silent
 	  Does not prompt for anything, will skip by default or error out if key parameters
 	  were not found during execution.
@@ -129,36 +139,38 @@ PACMAN_CACHE_DIR = pathlib.Path(f'{BUILD_DIR}/airootfs/root/{REPO_NAME}/').absol
 PACMAN_SYNC_CONF = f'{BUILD_DIR}/pacman.sync.conf' # Used to sync packages to localrepo
 PACMAN_BUILD_CONF = f'{BUILD_DIR}/pacman.build.conf' # Used to sync packages to localrepo
 
-def download_file(url, destination, filename=""):
+def download_file(url :str, destination :str, filename :str = "") -> bool:
 	if not (dst := pathlib.Path(destination)).exists():
 		dst.mkdir(parents=True)
+
 	if dst.is_file():
 		return False
 
 	tmp_filename, headers = urllib.request.urlretrieve(url)
 	shutil.move(tmp_filename, f"{destination}/{filename}")
+
 	return True
 
 @dataclasses.dataclass
 class PackageListing:
-	_inventory :list = dataclasses.field(default_factory=list)
+	_inventory :list[str] = dataclasses.field(default_factory=list)
 
-	def __add__(self, obj):
+	def __add__(self, obj :PackageListing) -> PackageListing:
 		if type(obj) != PackageListing:
 			raise ValueError(f"PackageListing requires addition object to be of PackageListing() too")
 
 		self._inventory += obj._inventory
 		return self
 
-	def __len__(self):
+	def __len__(self) -> int:
 		return len(self._inventory)
 
 	@property
-	def inventory(self):
+	def inventory(self) -> list[str]:
 		return self._inventory
 
 	@inventory.setter
-	def inventory(self, value):
+	def inventory(self, value :list[str]) -> None:
 		if type(value) != list:
 			raise ValueError(f"Inventory of a PackageListing() must be a list containing strings.")
 
@@ -183,27 +195,27 @@ class BobTheBuilder():
 	_pacman_package_cache_dir :pathlib.Path = PACMAN_CACHE_DIR
 	_repo_name :str = REPO_NAME
 
-	def __init__(self):
+	def __init__(self) -> None:
 		self._packages :PackageListing = PackageListing()
 		self._aur_packages :PackageListing = PackageListing()
 
 	@property
-	def packages(self):
+	def packages(self) -> list[str]:
 		return self._packages.inventory
 
 	@packages.setter
-	def packages(self, value):
+	def packages(self, value :list[str]) -> None:
 		self._packages.inventory = value
 
 	@property
-	def aur_packages(self):
+	def aur_packages(self) -> list[str]:
 		return self._aur_packages.inventory
 
 	@aur_packages.setter
-	def aur_packages(self, value):
+	def aur_packages(self, value :list[str]) -> None:
 		self._aur_packages.inventory = value
 
-	def sanity_checks(self):
+	def sanity_checks(self) -> None:
 		if os.getuid() != 0:
 			archinstall.log(f"==> Permission error, needs to be run as {archinstall.stylize_output('root', fg='red')}", level=logging.ERROR)
 			exit(1)
@@ -211,10 +223,10 @@ class BobTheBuilder():
 		try:
 			archinstall.SysCommand('pacman -Q archiso')
 		except archinstall.SysCallError:
-			archinstall.log(f"==> Missing requirement: {archinstall.stylize_output('archiso', fg='red')}", level=logging.ERROR)
+			archinstall.log(f"==> Missing requirement{archinstall.stylize_output('archiso', fg='red')}", level=logging.ERROR)
 			exit(1)
 
-	def move_folder(self, source, destination, force=False):
+	def move_folder(self, source :pathlib.Path, destination :pathlib.Path, force :bool = False) -> bool:
 		if not source.exists():
 			return True
 
@@ -231,11 +243,13 @@ class BobTheBuilder():
 		shutil.move(source, destination)
 		archinstall.log(f"==> Backed up {source} to {destination}.", level=logging.ERROR, fg="green")
 
-	def clean_old_build_information(self):
+		return True
+
+	def clean_old_build_information(self) -> None:
 		if self._build_dir.exists():
 			shutil.rmtree(f"{self._build_dir}")
 
-	def create_build_dir_for_conf(self, archiso_configuration):
+	def create_build_dir_for_conf(self, archiso_configuration :str) -> None:
 		archinstall.log(f"==> Ensuring the Arch ISO configuration {archinstall.stylize_output(archiso_configuration, fg='teal')} build dir {archinstall.stylize_output(self._build_dir, fg='teal')} is setup properly.", level=logging.INFO)
 		for obj in glob.glob(f'/usr/share/archiso/configs/{archiso_configuration}/*'):
 			if (self._build_dir / obj.split('/')[-1]).exists() is False:
@@ -246,7 +260,7 @@ class BobTheBuilder():
 
 		self._pacman_temporary_database.mkdir(parents=True, exist_ok=True)
 
-	def disable_reflector(self):
+	def disable_reflector(self) -> None:
 		reflector_config = self._build_dir/"airootfs"/"etc"/"systemd"/"system"/"reflector.service.d"/"archiso.conf"
 		reflector_user_config = self._build_dir/"airootfs"/"usr"/"lib"/"systemd"/"system"/"reflector.service"
 		if reflector_config.exists():
@@ -263,13 +277,13 @@ class BobTheBuilder():
 			if archinstall.arguments.get('rebuild', None) is not None:
 				archinstall.log(f"==> Could not remove {str(reflector_user_config).replace(str(self._build_dir), '')} (usually ok, as long as previous step worked)", level=logging.WARNING, fg="gray")
 
-	def apply_offline_patches(self):
+	def apply_offline_patches(self) -> None:
 		self.disable_reflector()
 		archinstall.log(f"==> Applied offline patches.", level=logging.INFO, fg="green")
 
-	def get_mirrors_from_archinstall(self):
+	def get_mirrors_from_archinstall(self) -> list[str]:
 		archinstall.log(f"==> Getting current mirror list from archinstall.", level=logging.INFO, fg="gray")
-		if not (mirror_region_data := archinstall.arguments.get('mirrors', None)):
+		if not (mirror_region_data := archinstall.arguments.get('mirror-region', None)):
 			mirror_region_data = archinstall.select_mirror_regions(archinstall.list_mirrors())
 			if not mirror_region_data:
 				raise archinstall.RequirementError("A mirror region is required. Future versions will source /etc/pacman.d/mirrors.")
@@ -281,7 +295,7 @@ class BobTheBuilder():
 
 		return mirrors
 
-	def create_pacman_conf_for_sync(self, mode):
+	def create_pacman_conf_for_sync(self, mode :str = 'copy') -> None:
 		if mode == 'copy':
 			with open('/etc/pacman.conf', 'r') as source_conf:
 				with open(self._pacman_sync_conf, 'w') as dest_conf:
@@ -308,8 +322,8 @@ class BobTheBuilder():
 				pac_conf.write(f"LocalFileSigLevel = Optional\n")
 				pac_conf.write(f"\n")
 
-				archinstall.log(f"Retrieving and using active mirrors from region {mirror_region} for ISO build.", level=logging.INFO)
-				mirror_str_list = '\n'.join(f"Server = {mirror}" for mirror in get_mirrors_from_archinstall())
+				archinstall.log(f"Retrieving and using active mirrors (for the given --mirror-region) for ISO build.", level=logging.INFO)
+				mirror_str_list = '\n'.join(f"Server = {mirror}" for mirror in self.get_mirrors_from_archinstall())
 
 				pac_conf.write(f"\n")
 				pac_conf.write(f"[core]\n")
@@ -321,7 +335,7 @@ class BobTheBuilder():
 
 		archinstall.log(f"==> Created pacman conf for building.", level=logging.INFO, fg="green")
 
-	def load_default_packages(self):
+	def load_default_packages(self) -> None:
 		packages = []
 		with open(f"{self._build_dir}/packages.x86_64", 'r') as packages_raw_file:
 			for line in packages_raw_file:
@@ -332,15 +346,15 @@ class BobTheBuilder():
 		self.packages += packages
 		archinstall.log(f"==> Default packages have been loaded from chosen Archiso configuration.", level=logging.INFO, fg="green")
 
-	def package_exists(self, package_name):
+	def package_exists(self, package_name :str) -> list[str]:
 		return glob.glob(str(self._pacman_package_cache_dir / f"{package_name}*.pkg*"))
 
-	def build_aur_packages(self):
+	def build_aur_packages(self) -> bool:
 		archinstall.log(f"==> Checking/Setting up temporary AUR build environment", level=logging.INFO, fg="teal")
 		if len(self._aur_packages) == 0:
 			return True
 
-		def untar_file(file):
+		def untar_file(file :str) -> None:
 			archinstall.SysCommand(f"/usr/bin/sudo -H -u {archinstall.arguments.get('aur-user', 'aoffline_usr')} /usr/bin/tar --directory /home/{archinstall.arguments.get('aur-user', 'aoffline_usr')}/ -xvzf {file}")
 
 		sudo_user = archinstall.arguments.get('aur-user', 'aoffline_usr')
@@ -449,8 +463,9 @@ class BobTheBuilder():
 		# If error, raise DependencyError
 
 		archinstall.log(f"==> All AUR packages have been built successfully.", level=logging.INFO, fg="green")
+		return True
 
-	def write_packages_to_package_file(self):
+	def write_packages_to_package_file(self) -> None:
 		with open(f"{self._build_dir}/packages.x86_64", 'w') as x86_packages:
 			for package in self.packages:
 				x86_packages.write(f"{package}\n")
@@ -460,7 +475,7 @@ class BobTheBuilder():
 
 		archinstall.log(f"==> Updated Archiso build configuration with all packages (official and AUR) before build.", level=logging.INFO, fg="green")
 
-	def download_package_list(self):
+	def download_package_list(self) -> None:
 		if archinstall.arguments.get('verbose', None):
 			archinstall.log(f"==> Syncronizing packages using: pacman --noconfirm --config {self._pacman_sync_conf} -Syw {' '.join(self.packages)}")
 		else:
@@ -473,7 +488,7 @@ class BobTheBuilder():
 
 		archinstall.log(f"==> Finished downloading all the listed packages to package cache.", level=logging.INFO, fg="green")
 
-	def update_offline_repo_database(self):
+	def update_offline_repo_database(self) -> None:
 		archinstall.log(f"==> Building offline repository database in build environment.", level=logging.INFO, fg="teal")
 		
 		if (repoadd := archinstall.SysCommand(f"/bin/bash -c \"repo-add {self._pacman_package_cache_dir}/{self._repo_name}.db.tar.gz {self._pacman_package_cache_dir}/{{*.pkg.tar.xz,*.pkg.tar.zst}}\"", peak_output=archinstall.arguments.get('verbose', False))).exit_code != 0:
@@ -483,7 +498,7 @@ class BobTheBuilder():
 
 		archinstall.log(f"==> Finished updating offline repository in build environment.", level=logging.INFO, fg="green")
 
-	def create_pacman_conf_for_build(self):
+	def create_pacman_conf_for_build(self) -> None:
 		with open(self._pacman_build_conf, 'w') as pac_conf:
 			pac_conf.write(f"[options]\n")
 			pac_conf.write(f"DBPath      = {self._pacman_temporary_database}\n")
@@ -503,7 +518,7 @@ class BobTheBuilder():
 			pac_conf.write(f"SigLevel = Optional TrustAll\n")
 			pac_conf.write(f"Server = file://{self._pacman_package_cache_dir}\n")
 
-	def copy_in_external_resources(self, resources :list = []):
+	def copy_in_external_resources(self, resources :list[str] = []) -> None:
 		if not resources:
 			return
 		
@@ -534,18 +549,18 @@ class BobTheBuilder():
 					shutil.copy2(f"{resource}", f"{self._build_dir}/airootfs/root/resources/")
 		archinstall.log(f"==> Finished gathering external resources.", level=logging.INFO, fg="green")
 
-	def archinstall(self, url :str = 'https://github.com/archlinux/archinstall.git', branch :str = 'master'):
+	def archinstall(self, url :str = 'https://github.com/archlinux/archinstall.git', branch :str = 'master') -> None:
 		archinstall.log(f"==> Cloning in archinstall to ISO build root under /root/archinstall-git.", level=logging.INFO, fg="teal")
 		
 		try:
 			archinstall.SysCommand(f"/bin/bash -c \"cd {self._build_dir}/airootfs/root/; git clone -b {branch} {url} archinstall-git\"", working_directory=f'{self._build_dir}/airootfs/root/')
-		except SysCallError as error:
-			archinstall.log(error, level=logging.ERROR, fg="red")
+		except archinstall.SysCallError as error:
+			archinstall.log(str(error), level=logging.ERROR, fg="red")
 			exit(1)
 
 		archinstall.log(f"==> Done cloning archinstall branch {branch} into buid root.", level=logging.INFO, fg="green")
 
-	def insert_autorun_string(self, string :str):
+	def insert_autorun_string(self, string :str) -> None:
 		if not string:
 			return
 
@@ -606,9 +621,8 @@ if archinstall.arguments.get('breakpoint', None):
 	input(f'Breakpoint before mkarchiso! Do final changes to {x._build_dir}')
 
 archinstall.log(f"==> Creating ISO (this will take time)", fg="teal", level=logging.INFO)
-if (iso := archinstall.SysCommand(f"/bin/bash -c \"mkarchiso -C {x._pacman_build_conf} -v -w {x._build_dir}/work/ -o {x._build_dir}/out/ {x._build_dir}\"", working_directory=x._build_dir, peak_output=archinstall.arguments.get('verbose', False))).exit_code != 0:
-	archinstall.log(iso, level=logging.ERROR, fg="red")
-	archinstall.log(iso.exit_code)
+if (iso := archinstall.SysCommand(f"/bin/bash -c \"mkarchiso -C {x._pacman_build_conf} -v -w {x._build_dir}/work/ -o {x._build_dir}/out/ {x._build_dir}\"", working_directory=str(x._build_dir), peak_output=archinstall.arguments.get('verbose', False))).exit_code != 0:
+	archinstall.log(str(iso), level=logging.ERROR, fg="red")
 	exit(1)
 
 archinstall.log(f"==> Your ISO has been created in {x._build_dir}/out/", fg="green", level=logging.INFO)

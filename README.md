@@ -12,11 +12,18 @@ Arguments:
 	  The default is: releng
 
 	--mirrors=<region>
-	  Uses the current HTTPS enabled mirrors from this region.
+	  Uses the current HTTP/HTTPS enabled mirrors from this region.
+	  Optional magical keywords instead of a region are:
+	   * copy - copies the /etc/pacman.conf setup to the build env
+	   * https://... - Will hard-code a specific repo server
+	   * file:// - Will use a locally stored mirror as the build env repo
 
 	--packages="<list of packages>"
 	  A space separated list of packages to ship with the iso
 	  aside from the default packages in archiso packages.x86_64
+
+	--skip-validation
+	  Skips validation of packages and AUR packages. Improves build speed.
 
 	--rebuild
 	  Cleans and re-creates the builddir and other dependencies
@@ -38,19 +45,15 @@ Arguments:
 	  Enables printout for all the syscalls that are being made.
 	  (For instance output from mkarchiso)
 
-	--boot
-	  Boots the built ISO, either after --rebuild or old build.
-
 	--archinstall
-	  Clones in archinstall master branch and adds it to autostart.
+	  Clones in archinstall to /root/archinstall-git with the given --ai-branch and
+	  --ai-url.
 	  (This is optional, archinstall stable is shipped as a package already)
 
 	--ai-branch=<archinstall branch to clone>
 	  This can override the default `master` branch.
 
-	--profiles=[a commaseparated list of profile paths]
-	  If a profile is given, it is copied into archinstall master directory.
-	  This option implies --archinstall is given.
+    --ai-url=https://github.com/archlinux/archinstall.git
 
 	--aur-packages="<list of AUR packages>"
 	  A space separated list of AUR packages that will be built and
@@ -61,6 +64,29 @@ Arguments:
 	  created. If the user does not have an entry in /etc/sudoers an entry
 	  will be created with NOPASSWD only if the user is locked on the local system.
 	  (the AUR user will be deleted as well as the /etc/sudoers entry unless pre-configured)
+
+	--resources="list of assets/resource URL's"
+	  A semi-colon (;) separated list of resources to package into the ISO.
+	  The resources will be stored in /root/resources. Acceptable URL's examples:
+	  https://
+	  /local/path.txt
+	  git://
+	  https://.git  (note: trailing .git important to trigger git clone)
+
+	--customize=<path to script>
+	  Add a script that will be run from within Archiso and executed before
+	  the ISO is finalized.
+
+	--autorun="<commands to autorun on every boot>"
+	  This injects a .zprofile auto-run string, be mindful of quotation issues:
+	  Injects: [[ -z $DISPLAY && $XDG_VTNR -eq 1 ]] && sh -c "{string}"
+
+	--save-offline-repository-cache
+	  Saves the local repository in the ISO defined by --repo.
+
+	--silent
+	  Does not prompt for anything, will skip by default or error out if key parameters
+	  were not found during execution.
 
 Examples:
 
