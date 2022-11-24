@@ -10,7 +10,7 @@ jobs:
             - run: pacman --noconfirm -Syu git python python-pip python-build
             - run: python -m pip install --upgrade pip
             - run: pip install git+https://github.com/DataDog/guarddog.git
-            - run: python --versiona
+            - run: python --version
             - name: run build
               run: python -m build
             - name: run guarddog
