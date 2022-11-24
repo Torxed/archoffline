@@ -2,3 +2,4 @@ archiso_offline
 install.log
 kvm.py
 *.sh
+dist/
