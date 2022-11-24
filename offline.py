@@ -52,6 +52,10 @@ Arguments:
 	--rebuild
 	  Cleans and re-creates the builddir and other dependencies
 
+	--keep-work
+	  This does not work with --rebuild, but it will wipe --builddir/work/ folder.
+	  This ensures that new packages gets built.
+
 	--breakpoint
 	  Creates a breakpoint right before mkarchiso is executed.
 	  This way you can do manual changes to the ISO layout before
@@ -252,7 +256,7 @@ class BobTheBuilder():
 	def create_build_dir_for_conf(self, archiso_configuration :str) -> None:
 		archinstall.log(f"==> Ensuring the Arch ISO configuration {archinstall.stylize_output(archiso_configuration, fg='teal')} build dir {archinstall.stylize_output(self._build_dir, fg='teal')} is setup properly.", level=logging.INFO)
 		for obj in glob.glob(f'/usr/share/archiso/configs/{archiso_configuration}/*'):
-			if (self._build_dir / obj.split('/')[-1]).exists() is False:
+			if (self._build_dir / obj.split('/')[-1]).exists() is False or obj.split('/')[-1] == 'packages.x86_64':
 				if os.path.isdir(obj):
 					shutil.copytree(obj, f"{self._build_dir}/{obj.split('/')[-1]}", symlinks=True)
 				else:
@@ -345,6 +349,9 @@ class BobTheBuilder():
 
 		self.packages += packages
 		archinstall.log(f"==> Default packages have been loaded from chosen Archiso configuration.", level=logging.INFO, fg="green")
+
+	def remove_work_directory(self) -> None:
+		shutil.rmtree(f"{self._build_dir}/work")
 
 	def package_exists(self, package_name :str) -> list[str]:
 		return glob.glob(str(self._pacman_package_cache_dir / f"{package_name}*.pkg*"))
@@ -491,7 +498,7 @@ class BobTheBuilder():
 	def update_offline_repo_database(self) -> None:
 		archinstall.log(f"==> Building offline repository database in build environment.", level=logging.INFO, fg="teal")
 		
-		if (repoadd := archinstall.SysCommand(f"/bin/bash -c \"repo-add {self._pacman_package_cache_dir}/{self._repo_name}.db.tar.gz {self._pacman_package_cache_dir}/{{*.pkg.tar.xz,*.pkg.tar.zst}}\"", peak_output=archinstall.arguments.get('verbose', False))).exit_code != 0:
+		if (repoadd := archinstall.SysCommand(f"/bin/bash -c \"repo-add --new {self._pacman_package_cache_dir}/{self._repo_name}.db.tar.gz {self._pacman_package_cache_dir}/{{*.pkg.tar.xz,*.pkg.tar.zst}}\"", peak_output=archinstall.arguments.get('verbose', False))).exit_code != 0:
 			archinstall.log(repoadd, level=logging.ERROR, fg="red")
 			archinstall.log(repoadd.exit_code)
 			exit(1)
@@ -601,6 +608,9 @@ def main() -> None:
 	x.apply_offline_patches()
 	x.create_pacman_conf_for_sync(archinstall.arguments.get('pacman-conf', 'copy'))
 	x.load_default_packages()
+
+	if archinstall.arguments.get('keep-work', False) is False:
+		x.remove_work_directory()
 
 	# Move back the saved caches
 	if archinstall.arguments.get('save-offline-repository-cache', False):
