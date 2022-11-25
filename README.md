@@ -82,7 +82,8 @@ Arguments:
 	  Injects: [[ -z $DISPLAY && $XDG_VTNR -eq 1 ]] && sh -c "{string}"
 
 	--save-offline-repository-cache
-	  Saves the local repository in the ISO defined by --repo.
+	  Saves the offline repository cache (packages) in the ISO between rebuilds.
+	  It's done by moving out the `--repo` folder/cache out and in the --builddir.
 
 	--silent
 	  Does not prompt for anything, will skip by default or error out if key parameters
