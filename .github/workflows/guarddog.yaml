@@ -7,9 +7,11 @@ jobs:
             image: archlinux:latest
         steps:
             - uses: actions/checkout@v3
-            - run: pacman --noconfirm -Syu git python python-setuptools python-pip python-build
+            - run: pacman --noconfirm -Syu git python python-setuptools python-pip python-build python-poetry
             - run: python -m pip install --upgrade pip
-            - run: pip install git+https://github.com/DataDog/guarddog.git
+            # - run: pip install git+https://github.com/DataDog/guarddog.git
+            - run: git clone https://github.com/DataDog/guarddog.git guarddog
+            - run: (cd guarddog && poetry install)
             - run: python --version
             - name: run build
               run: python -m build
