@@ -14,4 +14,4 @@ jobs:
             - name: run build
               run: python -m build
             - name: run guarddog
-              run: guarddog scan dist/*.tar.gz
+              run: guarddog --exit-non-zero-on-finding scan dist/*.tar.gz
