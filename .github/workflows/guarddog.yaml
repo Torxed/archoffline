@@ -16,5 +16,7 @@ jobs:
             - run: python --version
             - name: run build
               run: python -m build
-            - name: run guarddog
+            - name: run guarddog on archoffline
               run: guarddog scan dist/*.tar.gz --exit-non-zero-on-finding
+            - name: run guarddog on dependencies
+              run: xargs guarddog scan --exit-non-zero-on-finding <requirements.txt
