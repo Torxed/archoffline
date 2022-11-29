@@ -12,7 +12,7 @@ jobs:
             # - run: pip install -r https://raw.githubusercontent.com/DataDog/guarddog/main/requirements.txt
             # - run: pip install git+https://github.com/DataDog/guarddog.git
             - run: git clone https://github.com/DataDog/guarddog.git guarddog
-            - run: mv guarddog/guarddog ./
+            - run: cp -r guarddog/guarddog ./
             - run: python --version
             - name: run build
               run: python -m build
