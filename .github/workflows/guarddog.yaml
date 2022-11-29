@@ -12,9 +12,9 @@ jobs:
             # - run: pip install -r https://raw.githubusercontent.com/DataDog/guarddog/main/requirements.txt
             # - run: pip install git+https://github.com/DataDog/guarddog.git
             - run: git clone https://github.com/DataDog/guarddog.git guarddog
-            - run: (cd guarddog && poetry install)
+            - run: mv guarddog/guarddog ./
             - run: python --version
             - name: run build
               run: python -m build
             - name: run guarddog
-              run: guarddog --exit-non-zero-on-finding scan dist/*.tar.gz
+              run: python -m guarddog --exit-non-zero-on-finding scan dist/*.tar.gz
