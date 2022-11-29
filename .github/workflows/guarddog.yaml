@@ -9,12 +9,12 @@ jobs:
             - uses: actions/checkout@v3
             - run: pacman --noconfirm -Syu git python python-setuptools python-pip python-build python-poetry
             - run: python -m pip install --upgrade pip
-            - run: pip install -r https://raw.githubusercontent.com/DataDog/guarddog/main/requirements.txt
-            # - run: pip install git+https://github.com/DataDog/guarddog.git
-            - run: git clone https://github.com/DataDog/guarddog.git guarddog
-            - run: cp -r guarddog/guarddog ./
+            # - run: pip install -r https://raw.githubusercontent.com/DataDog/guarddog/main/requirements.txt
+            - run: pip install git+https://github.com/DataDog/guarddog.git
+            # - run: git clone https://github.com/DataDog/guarddog.git guarddog
+            # - run: cp -r guarddog/guarddog ./
             - run: python --version
             - name: run build
               run: python -m build
             - name: run guarddog
-              run: python -m guarddog scan dist/*.tar.gz --exit-non-zero-on-finding
+              run: guarddog scan dist/*.tar.gz --exit-non-zero-on-finding
