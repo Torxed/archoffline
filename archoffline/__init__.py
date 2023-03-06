@@ -351,7 +351,8 @@ class BobTheBuilder():
 		archinstall.log(f"==> Default packages have been loaded from chosen Archiso configuration.", level=logging.INFO, fg="green")
 
 	def remove_work_directory(self) -> None:
-		shutil.rmtree(f"{self._build_dir}/work")
+		if (self._build_dir/"work").exists():
+			shutil.rmtree(f"{self._build_dir}/work")
 
 	def package_exists(self, package_name :str) -> list[str]:
 		return glob.glob(str(self._pacman_package_cache_dir / f"{package_name}*.pkg*"))
