@@ -1,0 +1,9 @@
+[flake8]
+count = True
+# Several of the following could be autofixed or improved by running the code through psf/black
+ignore = W191,E231,E203,W292
+max-complexity = 40
+max-line-length = 236
+show-source = True
+statistics = True
+builtins = _

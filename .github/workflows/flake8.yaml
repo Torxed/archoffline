@@ -1,0 +1,12 @@
+on: [ push, pull_request ]
+name: flake8 linting
+jobs:
+    flake8:
+        runs-on: ubuntu-latest
+        container:
+            image: archlinux:latest
+        steps:
+            - uses: actions/checkout@v3
+            - run: pacman --noconfirm -Syu python flake8
+            - name: Lint with flake8
+              run: flake8

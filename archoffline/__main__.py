@@ -10,7 +10,7 @@ if pathlib.Path('./archoffline/__init__.py').absolute().exists():
 		if spec.loader:
 			spec.loader.exec_module(sys.modules["archoffline"])
 else:
-	import archoffline # type: ignore[no-redef]
+	import archoffline
 
 if __name__ == '__main__':
 	archoffline.main()
